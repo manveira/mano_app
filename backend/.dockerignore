@@ -1,0 +1,9 @@
+**/bin
+**/obj
+**/*.log
+**/*.tmp
+Dockerfile
+docker-compose*.yml
+.git
+.gitignore
+node_modules

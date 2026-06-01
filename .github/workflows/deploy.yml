@@ -1,0 +1,122 @@
+name: Deploy Mano App
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE: ghcr.io/${{ github.repository_owner }}/mano-backend
+  FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/mano-frontend
+
+jobs:
+  # ── 1. Verificar que compila ────────────────────────────────────────────────
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: backend/go.sum
+
+      - name: Build backend
+        working-directory: backend
+        run: go build ./...
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: TypeScript check
+        working-directory: web
+        run: npm ci && npx tsc --noEmit
+
+  # ── 2. Build y push imágenes a GHCR ────────────────────────────────────────
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build y push backend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          tags: |
+            ${{ env.BACKEND_IMAGE }}:latest
+            ${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build y push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./web
+          push: true
+          tags: |
+            ${{ env.FRONTEND_IMAGE }}:latest
+            ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+          build-args: NEXT_PUBLIC_API_URL=/api
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── 3. Deploy a Azure VM ────────────────────────────────────────────────────
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy via SSH a Azure VM
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.AZURE_VM_HOST }}      # IP pública de la VM en Azure
+          username: ${{ secrets.AZURE_VM_USER }}  # azureuser (por defecto en Azure)
+          key: ${{ secrets.AZURE_SSH_KEY }}        # clave privada SSH
+          script: |
+            set -e
+            cd /opt/mano-app
+
+            # Actualizar archivos de compose y nginx
+            git pull origin main
+
+            # Login a GHCR
+            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            # Exportar variables
+            export BACKEND_IMAGE=${{ env.BACKEND_IMAGE }}
+            export FRONTEND_IMAGE=${{ env.FRONTEND_IMAGE }}
+            export IMAGE_TAG=${{ github.sha }}
+
+            # Pull nuevas imágenes
+            docker pull ${{ env.BACKEND_IMAGE }}:latest
+            docker pull ${{ env.FRONTEND_IMAGE }}:latest
+
+            # Restart sin downtime
+            docker compose -f docker-compose.prod.yml up -d --no-deps --pull always backend
+            sleep 15
+            docker compose -f docker-compose.prod.yml up -d --no-deps --pull always frontend
+
+            # Limpiar imágenes viejas
+            docker image prune -f
+
+            echo "✅ Deploy completado — commit: ${{ github.sha }}"

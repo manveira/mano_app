@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root{ --container: 900px }
+body{ @apply bg-gray-50 text-gray-900; font-family: Inter, system-ui, -apple-system, Roboto, 'Helvetica Neue', Arial; margin:0; padding:0 }
+.container{ max-width: var(--container); margin: 24px auto; padding: 0 16px }
+a{ @apply text-blue-600 }
+
+.card { @apply bg-white shadow rounded p-4 }

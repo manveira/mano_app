@@ -1,0 +1,89 @@
+services:
+  postgres:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+      POSTGRES_DB: mano
+    ports:
+      - '5433:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - mano-network
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    networks:
+      - mano-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      SERVER_PORT: ":8080"
+      DATABASE_DSN: postgres://user:pass@postgres:5432/mano?sslmode=disable
+      JWT_SECRET: replace-this-secret
+      STRIPE_SECRET_KEY: ""
+      STRIPE_WEBHOOK_SECRET: ""
+      MOCK_MODE: "true"
+      APP_BASE_URL: "http://localhost"
+      WOMPI_PUBLIC_KEY: ${WOMPI_PUBLIC_KEY:-}
+      WOMPI_PRIVATE_KEY: ${WOMPI_PRIVATE_KEY:-}
+      WOMPI_INTEGRITY_SECRET: ${WOMPI_INTEGRITY_SECRET:-}
+      WOMPI_EVENTS_SECRET: ${WOMPI_EVENTS_SECRET:-}
+      PLATFORM_COMMISSION_RATE: "0.04"
+      AUTO_CONFIRM_HOURS: "24"
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      FROM_EMAIL: ${FROM_EMAIL:-}
+    ports:
+      - '8080:8080'
+    networks:
+      - mano-network
+
+  frontend:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: /api
+        NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: /api
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
+    networks:
+      - mano-network
+
+  proxy:
+    image: nginx:stable-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+      - frontend
+    networks:
+      - mano-network
+
+volumes:
+  postgres-data:
+
+networks:
+  mano-network:
+    driver: bridge

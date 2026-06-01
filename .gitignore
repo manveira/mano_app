@@ -1,0 +1,24 @@
+# Secretos — NUNCA subir a git
+.env
+.env.local
+.env.production
+
+# Node
+web/node_modules/
+web/.next/
+web/out/
+web/tsconfig.tsbuildinfo
+
+# Go
+backend/mano-app
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
