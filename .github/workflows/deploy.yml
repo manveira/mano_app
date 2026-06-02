@@ -89,9 +89,9 @@ jobs:
       - name: Deploy via SSH a Azure VM
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ secrets.AZURE_VM_HOST }}      # IP pública de la VM en Azure
-          username: ${{ secrets.AZURE_VM_USER }}  # azureuser (por defecto en Azure)
-          key: ${{ secrets.AZURE_SSH_KEY }}        # clave privada SSH
+          host: ${{ secrets.AZURE_VM_HOST }}
+          username: ${{ secrets.AZURE_VM_USER }}
+          password: ${{ secrets.AZURE_VM_PASSWORD }}
           script: |
             set -e
             cd /opt/mano-app
