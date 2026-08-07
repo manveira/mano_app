@@ -1,6 +1,5 @@
 import { useState } from 'react'
-import Router from 'next/router'
-import { useRouter } from 'next/router'
+import Router, { useRouter } from 'next/router'
 import Link from 'next/link'
 
 export default function SignIn() {
@@ -10,51 +9,27 @@ export default function SignIn() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  function validateEmail(email: string) {
-    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    return re.test(email)
-  }
-
-  async function submit(e:any) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
-
-    // Client-side validation
-    if (!email.trim()) {
-      setError('Email es requerido')
-      return
-    }
-    if (!validateEmail(email)) {
-      setError('Email inválido')
-      return
-    }
-    if (!password) {
-      setError('Password es requerido')
-      return
-    }
-
     setLoading(true)
     try {
       const res = await fetch((process.env.NEXT_PUBLIC_API_URL || '') + '/auth/signin', {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ email, password })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
       })
       if (res.ok) {
         const data = await res.json()
-        // store token minimally
         localStorage.setItem('token', data.token)
-        Router.push('/')
+        const role = data.user?.role || ''
+        if (role === 'business_owner') Router.push('/dashboard')
+        else Router.push('/profile')
       } else {
-        const txt = await res.text()
-        try {
-          const errorData = JSON.parse(txt)
-          setError(errorData.error || 'Error al iniciar sesión')
-        } catch {
-          setError('Credenciales inválidas')
-        }
+        const d = await res.json().catch(() => ({}))
+        setError(d.error || 'Credenciales inválidas')
       }
-    } catch (err) {
+    } catch {
       setError('Error de conexión')
     } finally {
       setLoading(false)
@@ -62,30 +37,52 @@ export default function SignIn() {
   }
 
   return (
-    <div className="container">
-      <div className="max-w-md mx-auto card">
-        <h2 className="text-xl font-semibold">Iniciar sesión</h2>
+    <div className="min-h-screen bg-lime-300 flex flex-col items-center justify-center px-6">
+      <div className="w-full max-w-sm">
+        <h1 className="font-black text-black text-5xl text-center mb-1">mano</h1>
+        <p className="text-black/60 text-center text-sm mb-8">Entra a tu cuenta</p>
+
         {query.registered && (
-          <div className="mt-2 p-3 bg-green-100 text-green-700 rounded text-sm">
-            ¡Cuenta creada! Inicia sesión para continuar.
+          <div className="mb-4 p-3 bg-black text-lime-300 rounded-xl text-sm text-center font-medium">
+            ¡Cuenta creada! Ya puedes entrar.
           </div>
         )}
-        {error && <div className="mt-2 p-3 bg-red-100 text-red-700 rounded text-sm">{error}</div>}
-        <form className="mt-4" onSubmit={submit}>
-          <div className="mb-3">
-            <label className="block text-sm text-gray-700">Email</label>
-            <input className="w-full border rounded px-2 py-1" value={email} onChange={e => setEmail(e.target.value)} disabled={loading} />
-          </div>
-          <div className="mb-3">
-            <label className="block text-sm text-gray-700">Password</label>
-            <input className="w-full border rounded px-2 py-1" type="password" value={password} onChange={e => setPassword(e.target.value)} disabled={loading} />
-          </div>
-          <button className="bg-blue-600 text-white px-4 py-2 rounded w-full disabled:opacity-50" type="submit" disabled={loading}>
-            {loading ? 'Entrando...' : 'Entrar'}
-          </button>
-        </form>
-        <div className="mt-4 text-center text-sm text-gray-600">
-          ¿No tienes cuenta? <Link className="text-blue-600 font-medium" href="/signup">Regístrate aquí</Link>
+
+        <div className="bg-white rounded-2xl shadow-lg p-6">
+          {error && (
+            <div className="mb-4 p-3 bg-red-50 text-red-600 rounded-xl text-sm">{error}</div>
+          )}
+          <form onSubmit={submit} className="space-y-3">
+            <input
+              type="email"
+              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-black"
+              placeholder="Email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              required
+              disabled={loading}
+            />
+            <input
+              type="password"
+              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm outline-none focus:border-black"
+              placeholder="Contraseña"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              required
+              disabled={loading}
+            />
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-black text-lime-300 font-black py-4 rounded-xl text-lg disabled:opacity-50"
+            >
+              {loading ? 'Entrando...' : 'Entrar'}
+            </button>
+          </form>
+          <p className="text-center text-sm text-black/50 mt-4">
+            ¿No tienes cuenta?{' '}
+            <Link href="/signup" className="font-bold text-black underline">Regístrate</Link>
+          </p>
         </div>
       </div>
     </div>

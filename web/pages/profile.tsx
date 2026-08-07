@@ -1,108 +1,122 @@
 import { useEffect, useState } from 'react'
 import Router from 'next/router'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 
-type User = { id: number; email: string; role: string; name?: string }
+const QRCodeSVG = dynamic(() => import('qrcode.react').then(m => m.QRCodeSVG), { ssr: false })
 
-const ROLE_LABELS: Record<string, string> = {
-  customer: 'Cliente',
-  business_owner: 'Dueño de negocio',
-  freelancer: 'Freelancer',
-}
+type User = { id: number; name: string; email: string; role: string; username: string }
+type View = 'menu' | 'carnet'
 
 export default function Profile() {
   const [user, setUser] = useState<User | null>(null)
+  const [referralUrl, setReferralUrl] = useState('')
   const [loading, setLoading] = useState(true)
+  const [view, setView] = useState<View>('menu')
 
   useEffect(() => {
     const token = localStorage.getItem('token')
     if (!token) { Router.push('/signin'); return }
-
-    fetch((process.env.NEXT_PUBLIC_API_URL || '') + '/me', {
-      headers: { Authorization: 'Bearer ' + token },
-    })
-      .then(r => {
-        if (r.status === 401) { Router.push('/signin'); return null }
-        return r.json()
-      })
-      .then(data => {
-        if (data) setUser(data.user)
-        setLoading(false)
-      })
-      .catch(() => setLoading(false))
+    const base = process.env.NEXT_PUBLIC_API_URL || ''
+    const headers = { Authorization: 'Bearer ' + token }
+    Promise.all([
+      fetch(base + '/me', { headers }),
+      fetch(base + '/sell/referral-code', { headers }),
+    ]).then(async ([meRes, refRes]) => {
+      if (meRes.status === 401) { Router.push('/signin'); return }
+      if (meRes.ok) { const d = await meRes.json(); setUser(d.user) }
+      if (refRes.ok) { const d = await refRes.json(); setReferralUrl(d.referral_url || '') }
+      setLoading(false)
+    }).catch(() => setLoading(false))
   }, [])
 
-  if (loading) return <div className="container"><p className="text-gray-500 mt-8">Cargando...</p></div>
+  function logout() {
+    localStorage.removeItem('token')
+    Router.push('/')
+  }
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-[#bef264] border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
+  }
   if (!user) return null
 
+  const firstName = user.name?.split(' ')[0] || user.email
+  const isFreelancer = user.role === 'freelancer'
+  const isBusiness = user.role === 'business_owner'
+
+  /* ── CARNET QR: imagen 07 literal, solo botón volver ── */
+  if (view === 'carnet') {
+    return (
+      <div className="min-h-screen bg-black flex flex-col items-center justify-center">
+        <div className="w-full max-w-sm mx-auto">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/branding/07-perfil-carnet-qr.jpeg"
+            alt="Carnet"
+            className="w-full block"
+          />
+        </div>
+        <button
+          onClick={() => setView('menu')}
+          className="mt-4 mb-6 text-sm text-white/60 hover:text-white"
+        >
+          ← Volver
+        </button>
+      </div>
+    )
+  }
+
+  /* ── MENÚ PRINCIPAL: imagen 06 con botones invisibles encima ── */
   return (
-    <div className="container">
-      <div className="max-w-md mx-auto">
-        <h1 className="text-2xl font-bold mb-4">Mi perfil</h1>
+    <div className="min-h-screen bg-black flex flex-col items-center">
+      <div className="w-full max-w-sm mx-auto relative">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/branding/06-perfil-menu-comisionista.jpeg"
+          alt="Perfil"
+          className="w-full block"
+        />
 
-        <div className="card mb-4">
-          <div className="flex items-center gap-4 mb-4">
-            <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center text-2xl font-bold text-blue-600">
-              {(user.name || user.email)[0].toUpperCase()}
-            </div>
-            <div>
-              <p className="font-semibold text-lg">{user.name || '—'}</p>
-              <p className="text-sm text-gray-500">{user.email}</p>
-            </div>
-          </div>
-          <div className="border-t pt-3 space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-gray-500">ID de usuario</span>
-              <span className="font-medium">#{user.id}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500">Rol</span>
-              <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                user.role === 'business_owner' ? 'bg-purple-100 text-purple-700' :
-                user.role === 'freelancer' ? 'bg-orange-100 text-orange-700' :
-                'bg-blue-100 text-blue-700'
-              }`}>
-                {ROLE_LABELS[user.role] || user.role}
-              </span>
-            </div>
-          </div>
-        </div>
+        {/* Cara del chico → carnet */}
+        <button
+          onClick={() => setView('carnet')}
+          className="absolute rounded-full cursor-pointer"
+          style={{ top: '2%', left: '37%', width: '26%', height: '23%', background: 'transparent' }}
+          aria-label="Ver carnet"
+        />
 
-        {/* Acciones según rol */}
-        <div className="card space-y-2">
-          <h3 className="font-semibold mb-2">Acciones</h3>
-          <Link href="/orders" className="block text-blue-600 hover:underline text-sm">📦 Mis órdenes</Link>
-          {user.role === 'business_owner' && (
-            <>
-              <Link href="/dashboard" className="block text-blue-600 hover:underline text-sm">📊 Dashboard de negocio</Link>
-              <Link href="/create-business" className="block text-blue-600 hover:underline text-sm">➕ Crear negocio</Link>
-              <Link href="/create-product" className="block text-blue-600 hover:underline text-sm">➕ Crear producto</Link>
-              <Link href="/advertise" className="block text-blue-600 hover:underline text-sm">📣 Publicidad</Link>
-            </>
-          )}
-          {user.role === 'freelancer' && (
-            <>
-              <Link href="/sell" className="block text-green-600 hover:underline text-sm font-medium">💰 Panel de ventas</Link>
-              {(user as any).plan === 'pro' && (user as any).plan_expires_at && (
-                <p className="text-xs text-gray-500">
-                  Plan Pro activo hasta: {new Date((user as any).plan_expires_at).toLocaleDateString('es-CO')}
-                </p>
-              )}
-              {(user as any).plan !== 'pro' && (
-                <Link href="/apply" className="block text-purple-600 hover:underline text-sm">🏪 Registrar mi negocio</Link>
-              )}
-            </>
-          )}
-          {user.role === 'courier' && (
-            <Link href="/courier" className="block text-blue-600 hover:underline text-sm">🛵 Ver pedidos disponibles</Link>
-          )}
-          <button
-            onClick={() => { localStorage.removeItem('token'); Router.push('/') }}
-            className="block text-red-600 hover:underline text-sm text-left"
-          >
-            🚪 Cerrar sesión
-          </button>
-        </div>
+        {/* Mis Productos ~39-46% */}
+        <button onClick={() => Router.push('/sell')}
+          className="absolute cursor-pointer"
+          style={{ top: '39%', left: '10%', width: '80%', height: '7%', background: 'transparent' }}
+          aria-label="Mis Productos"
+        />
+
+        {/* Mi Dinero ~45-52% */}
+        <button onClick={() => Router.push('/sell')}
+          className="absolute cursor-pointer"
+          style={{ top: '45%', left: '10%', width: '80%', height: '7%', background: 'transparent' }}
+          aria-label="Mi Dinero"
+        />
+
+        {/* Pendientes ~50-57% */}
+        <button onClick={() => Router.push('/orders')}
+          className="absolute cursor-pointer"
+          style={{ top: '50%', left: '10%', width: '80%', height: '7%', background: 'transparent' }}
+          aria-label="Pendientes"
+        />
+
+        {/* Cerrar sesión ~74-82% */}
+        <button
+          onClick={logout}
+          className="absolute cursor-pointer"
+          style={{ top: '74%', left: '10%', width: '80%', height: '8%', background: 'transparent' }}
+          aria-label="Cerrar sesión"
+        />
       </div>
     </div>
   )
