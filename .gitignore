@@ -3,6 +3,10 @@
 .env.local
 .env.production
 
+# Configuración del agente: tiene tokens (la plantilla mcp.json.example sí se versiona)
+.kiro/settings/mcp.json
+.kiro/settings/*.bak
+
 # Node
 web/node_modules/
 web/.next/

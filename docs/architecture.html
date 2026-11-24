@@ -43,6 +43,9 @@
   .pill{display:inline-block;padding:1px 9px;border-radius:99px;font-size:11.5px;font-weight:600}
   .ok{background:#12301d;color:var(--green)} .bad{background:#3a1717;color:var(--red)}
   .warn{background:#3a2e10;color:var(--amber)} .info{background:#142640;color:var(--blue)}
+  .bar{height:10px;background:#0b0d12;border:1px solid var(--line);border-radius:99px;overflow:hidden;display:flex;margin:8px 0 4px}
+  .bar i{display:block;height:100%} .bar .d{background:var(--green)} .bar .p{background:var(--amber)}
+  .kpi{display:flex;gap:22px;flex-wrap:wrap;margin:6px 0 10px} .kpi b{font-size:22px;display:block} .kpi span{color:var(--muted);font-size:12.5px}
   .flow{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;counter-reset:s}
   .step{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 14px 12px;position:relative}
   .step::before{counter-increment:s;content:counter(s);position:absolute;top:-10px;left:12px;background:var(--lime);color:#000;
@@ -60,16 +63,45 @@
 
 <header>
   <h1><span>mano</span> · Arquitectura actual y objetivo</h1>
-  <p>Generado del análisis del repo (27 oct 2026). Detalle completo en <code>ARCHITECTURE_CURRENT_STATE.md</code>.</p>
+  <p>Análisis del repo (27 oct 2026), <b>actualizado con el avance real el 25 nov 2026</b>. Detalle en <code>ARCHITECTURE_CURRENT_STATE.md</code> y <code>MIGRATION_PLAN.md</code>.</p>
 </header>
 <nav><div>
-  <a href="#actual">1 · Hoy</a><a href="#ejecucion">2 · Quién corre dónde</a><a href="#objetivo">3 · Objetivo</a>
+  <a href="#avance">Avance</a><a href="#actual">1 · Hoy</a><a href="#ejecucion">2 · Quién corre dónde</a><a href="#objetivo">3 · Objetivo</a>
   <a href="#headers">4 · Headers de cliente</a><a href="#ruteo">5 · Ruteo</a>
   <a href="#venta">6 · Flujo de venta</a><a href="#acople">7 · Acoplamientos</a>
   <a href="#hallazgos">8 · Hallazgos</a><a href="#fases">9 · Fases</a><a href="#decisiones">10 · Decisiones</a>
 </div></nav>
 
 <main>
+
+<!-- ============================ AVANCE REAL ============================ -->
+<section id="avance">
+  <h2>Avance real del refactor · corte 25 nov 2026</h2>
+  <p class="sub">De las 9 fases del plan, <b>ninguna ha pasado su gate</b>. La arquitectura objetivo (gateway + servicios laterales + web estático + apps nativas) <b>todavía no existe</b>: hoy sigue siendo el monolito Go detrás de nginx con el web de Next.js. Lo que sí avanzó es lo que habilita el resto: contrato, pagos y entorno de pruebas.</p>
+  <div class="card">
+    <div class="kpi">
+      <div><b>12 de 76</b><span>tareas hechas (≈ 16 %)</span></div>
+      <div><b>7</b><span>en curso (≈ 25 % con ellas)</span></div>
+      <div><b>0 de 9</b><span>gates cerrados</span></div>
+      <div><b>182 / 0 / 1</b><span>API: pasan / fallan / fallo conocido</span></div>
+    </div>
+    <div class="bar" title="12 hechas, 7 en curso, 57 sin empezar"><i class="d" style="width:15.8%"></i><i class="p" style="width:9.2%"></i></div>
+    <div class="legend"><span><i style="background:var(--green)"></i>hechas</span><span><i style="background:var(--amber)"></i>en curso</span><span><i style="background:#0b0d12;border:1px solid var(--line)"></i>sin empezar</span></div>
+    <table style="margin-top:14px">
+      <tr><th>Fase</th><th>Qué es</th><th>Estado</th><th>Hecho / falta</th></tr>
+      <tr><td>F0</td><td>Fundaciones y guardrails</td><td><span class="pill warn">casi</span></td><td>Entorno local, smoke, línea base y CI escritos. Falta ver el CI verde en GitHub y el tag.</td></tr>
+      <tr><td>F1</td><td>Contrato OpenAPI</td><td><span class="pill warn">borrador</span></td><td>27 rutas / 31 operaciones / 86 schemas de ≈ 64 rutas reales. Falta cubrirlas todas, tests de contrato, congelar v1 y generar clientes.</td></tr>
+      <tr><td>F2</td><td>Gateway</td><td><span class="pill bad">no iniciado</span></td><td>Nada. Depende de D4. (El nginx de producción ya limita intentos en <code>/api/auth/</code> y añade cabeceras.)</td></tr>
+      <tr><td>F3</td><td>Web aislado</td><td><span class="pill warn">parcial</span></td><td>Hotspots tipados, cliente API con headers <code>X-Mano-*</code>, sesión, <code>/pagos</code>. Falta cliente generado, páginas legacy, export estático y E2E en CI.</td></tr>
+      <tr><td>F4</td><td>Correcciones del backend</td><td><span class="pill warn">≈ 45 %</span></td><td>Pagos Wompi, secretos, seed, registro, historial de pagos y conciliación hechos. Falta <b>auto-confirm 24 h</b>, atribución guest, anti-fraude real, atomicidad de retiros, ads/Pro.</td></tr>
+      <tr><td>F5</td><td>Servicios laterales</td><td><span class="pill bad">no iniciado</span></td><td>auth-session, uploads, push y realtime: nada.</td></tr>
+      <tr><td>F6</td><td>Apps iOS y Android</td><td><span class="pill bad">no iniciado</span></td><td>Espera las imágenes mobile y la decisión D3.</td></tr>
+      <tr><td>F7</td><td>Endurecimiento</td><td><span class="pill bad">no iniciado</span></td><td>Solo hay respaldo de BD antes de cada despliegue. Faltan migraciones versionadas, carga y observabilidad.</td></tr>
+      <tr><td>F8</td><td>Promoción a remoto</td><td><span class="pill warn">adelantada</span></td><td>Despliegue manual con confirmación, imágenes por SHA, respaldo, salud y reversión ya escrito. Falta staging real, DNS/TLS y secretos en GitHub.</td></tr>
+    </table>
+    <p class="sub" style="margin-top:12px"><b>Desviación consciente (25 nov):</b> se sube el código y se prepara Azure <i>antes</i> de los gates, como despliegue de la arquitectura actual con llaves de <b>sandbox</b> de Wompi. No es la promoción completa: no cobrar dinero real hasta cerrar F4.4–F4.7.</p>
+  </div>
+</section>
 
 <!-- ============================ 1. ACTUAL ============================ -->
 <section id="actual">
@@ -320,20 +352,20 @@
   <div class="grid2">
     <div class="card"><span class="pill bad">Crítico</span>
       <ul>
-        <li>Firma de integridad Wompi con HMAC (debe ser SHA256 simple)</li>
-        <li>Webhook Wompi omite <code>timestamp</code> → pagos no se confirman</li>
-        <li>Webhook acepta todo si <code>WOMPI_EVENTS_SECRET</code> está vacío</li>
+        <li><s>Firma de integridad Wompi con HMAC</s> <span class="pill ok">corregido 25-nov</span></li>
+        <li><s>Webhook Wompi omite <code>timestamp</code></s> <span class="pill ok">corregido 25-nov</span></li>
+        <li><s>Webhook acepta todo sin <code>WOMPI_EVENTS_SECRET</code></s> <span class="pill ok">corregido 25-nov</span></li>
         <li>Sin auto-confirm de 24 h fuera de mock</li>
         <li>Paquetes de publicidad y Plan Pro se activan sin cobrar</li>
-        <li>Seed con <code>password123</code> corre también en producción</li>
+        <li><s>Seed con <code>password123</code> en producción</s> <span class="pill ok">corregido 25-nov</span></li>
       </ul></div>
     <div class="card"><span class="pill warn">Alto / medio</span>
       <ul>
         <li>Atribución del comisionista perdida en compra guest</li>
         <li>Anti-fraude (misma cédula) solo en el flujo mock</li>
-        <li>Dinero sin transacciones de BD (retiros, escrow); webhook no idempotente</li>
+        <li>Dinero sin transacciones de BD en retiros y liberación de escrow <span class="pill warn">parcial</span> (el webhook ya es atómico e idempotente)</li>
         <li>Ruta Stripe en USD que se salta el escrow</li>
-        <li><code>JWT_SECRET</code> con valor por defecto</li>
+        <li><s><code>JWT_SECRET</code> con valor por defecto</s> <span class="pill ok">corregido 25-nov</span> (el backend no arranca así)</li>
         <li>Rol <code>courier</code> inexistente; KYC a medias</li>
       </ul></div>
   </div>
@@ -343,14 +375,15 @@
 <!-- ============================ 7. FASES ============================ -->
 <section id="fases">
   <h2>9 · Fases del refactor</h2>
+  <p class="sub">Numeración original de este documento (Fase 0–5). En <code>MIGRATION_PLAN.md</code> las mismas etapas se detallan como F0–F8 (ahí F4 = correcciones del backend y F8 = promoción a remoto). El estado de cada una está arriba, en "Avance real".</p>
   <div class="card">
-    <div class="phase"><h4>Fase 0</h4><div>Escribir <code>openapi.yaml</code> + tests de contrato en CI; añadir <code>go test</code>/<code>vet</code> al pipeline.</div><span class="pill ok">no toca backend</span></div>
-    <div class="phase"><h4>Fase 1</h4><div>Gateway delante del core: allow-list, CORS, rate limit, <code>/v1→/api</code>, <code>api.mano.app</code> con TLS; alias <code>/api</code> para el web actual.</div><span class="pill ok">no toca backend</span></div>
-    <div class="phase"><h4>Fase 2</h4><div>Web usa el cliente generado contra <code>api.mano.app/v1</code>, envía los headers de cliente y se publica como archivos estáticos (desaparece el contenedor del frontend).</div><span class="pill ok">no toca backend</span></div>
-    <div class="phase"><h4>Fase 3</h4><div>Edge services: <code>auth-session</code> y <code>uploads</code>.</div><span class="pill ok">no toca backend</span></div>
-    <div class="phase"><h4>Fase 4</h4><div>Apps iOS y Android sobre el contrato (+ push, deep links); publicación por TestFlight/Play, no por servidores.</div><span class="pill ok">no toca backend</span></div>
-    <div class="phase"><h4>Fase 5</h4><div><code>realtime</code>, observabilidad y endurecimiento.</div><span class="pill ok">no toca backend</span></div>
-    <div class="phase"><h4>Transversal</h4><div>Corregir los hallazgos críticos de la sección 6 sin alterar el contrato.</div><span class="pill bad">toca código</span></div>
+    <div class="phase"><h4>Fase 0</h4><span class="pill warn" style="float:right">borrador 27 rutas</span><div>Escribir <code>openapi.yaml</code> + tests de contrato en CI; añadir <code>go test</code>/<code>vet</code> al pipeline.</div><span class="pill ok">no toca backend</span></div>
+    <div class="phase"><h4>Fase 1</h4><span class="pill bad" style="float:right">no iniciada</span><div>Gateway delante del core: allow-list, CORS, rate limit, <code>/v1→/api</code>, <code>api.mano.app</code> con TLS; alias <code>/api</code> para el web actual.</div><span class="pill ok">no toca backend</span></div>
+    <div class="phase"><h4>Fase 2</h4><span class="pill warn" style="float:right">parcial</span><div>Web usa el cliente generado contra <code>api.mano.app/v1</code>, envía los headers de cliente y se publica como archivos estáticos (desaparece el contenedor del frontend).</div><span class="pill ok">no toca backend</span></div>
+    <div class="phase"><h4>Fase 3</h4><span class="pill bad" style="float:right">no iniciada</span><div>Edge services: <code>auth-session</code> y <code>uploads</code>.</div><span class="pill ok">no toca backend</span></div>
+    <div class="phase"><h4>Fase 4</h4><span class="pill bad" style="float:right">no iniciada</span><div>Apps iOS y Android sobre el contrato (+ push, deep links); publicación por TestFlight/Play, no por servidores.</div><span class="pill ok">no toca backend</span></div>
+    <div class="phase"><h4>Fase 5</h4><span class="pill bad" style="float:right">no iniciada</span><div><code>realtime</code>, observabilidad y endurecimiento.</div><span class="pill ok">no toca backend</span></div>
+    <div class="phase"><h4>Transversal</h4><span class="pill warn" style="float:right">≈ 45 %</span><div>Corregir los hallazgos críticos de la sección 6 sin alterar el contrato.</div><span class="pill bad">toca código</span></div>
   </div>
 </section>
 
@@ -360,12 +393,12 @@
   <div class="card">
   <table>
     <tr><th>#</th><th>Pregunta</th><th>Recomendación</th></tr>
-    <tr><td>D1</td><td>¿"Backend inmutable" = contrato o código?</td><td><span class="pill info">contrato</span></td></tr>
-    <tr><td>D2</td><td>Auto-confirm 24 h: ¿worker interno o job externo?</td><td>Worker interno (no hay endpoint no-mock al que llamar)</td></tr>
+    <tr><td>D1</td><td>¿"Backend inmutable" = contrato o código?</td><td><span class="pill ok">decidida</span> contrato congelado, código corregible</td></tr>
+    <tr><td>D2</td><td>Auto-confirm 24 h: ¿worker interno o job externo?</td><td>Worker interno (no hay endpoint no-mock al que llamar). <span class="pill warn">sigue pendiente y bloquea cobrar dinero real</span></td></tr>
     <tr><td>D3</td><td>Móvil: ¿nativo o React Native/Expo?</td><td>Depende de equipo; RN reutiliza el cliente TS</td></tr>
     <tr><td>D4</td><td>Gateway</td><td>Kong DB-less (alternativas: Traefik, nginx)</td></tr>
     <tr><td>D5</td><td>Dominios <code>api.</code> y <code>admin.</code></td><td>Sí</td></tr>
-    <tr><td>D6</td><td>Rol <code>courier</code> en el contrato</td><td>Diferir</td></tr>
+    <tr><td>D6</td><td>Rol <code>courier</code> en el contrato</td><td><span class="pill ok">decidida</span> se programa (<code>courier</code> y <code>service_provider</code>, aditivo)</td></tr>
     <tr><td>D7</td><td>Alcance del contrato v1</td><td>Rutas usadas hoy primero, el resto por demanda</td></tr>
     <tr><td>D8</td><td>Hosting del web: ¿export estático o Next.js standalone? ¿VM Azure con nginx o Static Web Apps/CDN?</td><td>Export estático (ajustar 4 rutas dinámicas)</td></tr>
     <tr><td>D9</td><td>Nombres de headers de cliente y política de versión mínima (<code>426</code>)</td><td><code>X-Mano-Client*</code>; soportar las últimas N versiones</td></tr>
@@ -374,6 +407,6 @@
 </section>
 
 </main>
-<footer>Hallazgos 1 y 2 (firma de integridad y checksum del webhook) contrastados con la documentación oficial de Wompi. El resto sale de leer el código; no se ejecutó nada.</footer>
+<footer>Hallazgos 1 y 2 (firma de integridad y checksum del webhook) contrastados con la documentación oficial de Wompi y ya corregidos y probados contra el sandbox. El avance real sale de <code>docs/MIGRATION_PLAN.md</code> y de las pruebas ejecutadas el 25 nov 2026.</footer>
 </body>
 </html>
