@@ -70,7 +70,7 @@ F0 ─▶ F1 ─▶ F2 ─▶ F3 ───────────┐
 - La copia analizada **no tiene `.git`**. Ubicar el repo real (el que está en GitHub) y trabajar ahí.
 - Entregable: rama `refactor/multifront` y tag `baseline-pre-refactor` sobre el estado actual.
 - Verificación: `git status` limpio · `git tag -l baseline-pre-refactor` · `git branch --show-current`.
-- **Hecho (24-nov-2026):** el repo es `github.com/manveira/mano_app`; la carpeta de trabajo no es un repo git, así que se versiona con `scripts/github-sync.sh` (clon en `~/mano-push`) hacia la rama `refactor/multifront` y el PR #1. **Falta:** el tag `baseline-pre-refactor` sobre el `main` anterior (`5ddd98d`) 👤.
+- **Hecho (24-nov-2026):** el repo es `github.com/manveira/mano_app`; la carpeta de trabajo no es un repo git, así que se versiona con `scripts/github-sync.sh` (clon en `~/mano-push`) hacia la rama `refactor/multifront` y el PR #1. **PR #1 fusionado a `main` el 24-nov-2026 09:39 UTC (merge `437a2a0`); comprobado que el merge no disparó ningún despliegue.** **Falta:** el tag `baseline-pre-refactor` sobre el `main` anterior (`5ddd98d`) 👤.
 
 ### F0.2 — Guardrails de imágenes ✅ 🤖
 - Entregado: `.kiro/steering/design-assets-immutable.md`, hook `.kiro/hooks/protect-design-assets.json` + `.kiro/scripts/guard-design-assets.sh`, `mano_app/design-assets/` (README + `MANIFEST.sha256` con las 7 imágenes actuales), `scripts/verify-design-assets.sh` y `scripts/register-design-assets.sh`.
@@ -390,6 +390,6 @@ Marca el estado de cada tarea en este archivo (⬜ → 🟡 → ✅). Al cerrar 
 
 **Desviación consciente (decisión del usuario, 24-nov-2026):** subir el código a GitHub y dejar listo el despliegue en Azure **antes** de los gates G0–G7. Se acepta como un *despliegue de la arquitectura actual en modo staging*, con llaves de **sandbox** de Wompi, `MOCK_MODE=false`, `SEED_DEMO_DATA=false`. **No** es la promoción F8 completa: no se debe cobrar dinero real hasta cerrar al menos F4.4–F4.7.
 
-**Ruta recomendada desde aquí:** (1) PR #1 con CI verde ✅ (falta fusionarlo y poner el tag) → G0; (2) cerrar F4 (F4.4 primero) con el sandbox de Wompi; (3) decidir D4 y levantar el gateway (F2) para tener el contrato en `/v1`; (4) F1 completo + clientes generados y F3 restante; (5) F5 (auth-session primero) y F6 cuando haya imágenes mobile; (6) F7 y F8.
+**Ruta recomendada desde aquí:** (1) PR #1 con CI verde y **fusionado** ✅ (falta solo el tag `baseline-pre-refactor`) → G0; (2) cerrar F4 (F4.4 primero) con el sandbox de Wompi; (3) decidir D4 y levantar el gateway (F2) para tener el contrato en `/v1`; (4) F1 completo + clientes generados y F3 restante; (5) F5 (auth-session primero) y F6 cuando haya imágenes mobile; (6) F7 y F8.
 
 > **Costos (24-nov-2026):** cada fase tiene su costo de infraestructura en `docs/COSTS.md` §6 (hoy ≈ $39/mes; refactor económico $76–90; administrado ligero $82–150; con SLA/HA ≈ $580). Hallazgo para F4/F8: la tarifa de Wompi (2,65 % + $700 + IVA) supera la comisión del 4 % en pedidos menores de ≈ $98.400 COP; decidir quién la paga **antes** de cobrar dinero real.
