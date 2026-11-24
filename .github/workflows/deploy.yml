@@ -131,7 +131,9 @@ jobs:
           host: ${{ secrets.AZURE_VM_HOST || vars.AZURE_VM_HOST }}
           username: ${{ secrets.AZURE_VM_USER || vars.AZURE_VM_USER }}
           key: ${{ secrets.AZURE_SSH_KEY }}
-          password: ${{ secrets.AZURE_VM_PASSWORD }}
+          # Acepta la contraseña como secret (recomendado) o, por compatibilidad, como variable (vars.AZURE_VM_PASSWORD).
+          # Las variables se ven en repos públicos: pásala a secret cuando puedas.
+          password: ${{ secrets.AZURE_VM_PASSWORD || vars.AZURE_VM_PASSWORD }}
           fingerprint: ${{ secrets.AZURE_VM_FINGERPRINT }}
           envs: GHCR_TOKEN,GHCR_USER,DEPLOY_SHA
           script_stop: true

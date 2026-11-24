@@ -31,13 +31,13 @@ Estado conocido al 24-nov-2026: la suscripción `manve-subs` figura **Disabled**
 |---|---|---|
 | Secret | `GHCR_TOKEN` | Token personal (classic) con permiso `read:packages`, para que la VM descargue las imágenes |
 | Secret | `AZURE_SSH_KEY` | Llave privada SSH con acceso a la VM (recomendado) |
-| Secret | `AZURE_VM_PASSWORD` | Solo si aún no usas llave SSH. **Debe ser secret, no variable** (las variables se ven en repos públicos) |
+| Secret | `AZURE_VM_PASSWORD` | Solo si aún no usas llave SSH. Lo correcto es **secret**; por compatibilidad el workflow también acepta la **variable** `AZURE_VM_PASSWORD` (las variables se ven en repos públicos: pásala a secret) |
 | Secret (opcional) | `AZURE_VM_FINGERPRINT` | Huella SHA256 del host SSH, para no confiar a ciegas en el servidor |
 | Variable | `AZURE_VM_HOST` | IP pública o dominio de la VM |
 | Variable | `AZURE_VM_USER` | Usuario SSH (p. ej. `azureuser`) |
 | Variable (opcional) | `APP_URL` | `https://TU_DOMINIO`: al terminar, el workflow comprueba `…/api/health` desde fuera |
 
-> Pendiente conocido: la contraseña SSH estaba guardada como **variable** (`AZURE_VM_PASSWORD`). Bórrala de *Variables* y créala en *Secrets* (o usa llave SSH).
+> Pendiente conocido: la contraseña SSH está guardada como **variable** (`AZURE_VM_PASSWORD`). Desde el 24-nov-2026 el workflow la acepta así, pero conviene crearla en *Secrets* (o usar llave SSH) y borrar la variable.
 > Opcional: *Settings → Environments → production → Required reviewers* para exigir aprobación manual antes del paso de deploy.
 
 Crear la llave SSH (en tu máquina): `ssh-keygen -t ed25519 -f ~/.ssh/mano_deploy -N ""`; la pública (`.pub`) se agrega a `~/.ssh/authorized_keys` de la VM y la privada completa va al secret `AZURE_SSH_KEY`.
