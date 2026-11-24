@@ -413,12 +413,12 @@
 
   <div class="card">
     <div class="kpi">
-      <div><b>≈ $39</b><span>hoy: 1 VM de Azure (≈ 138 mil COP/mes)</span></div>
-      <div><b>$76 – 90</b><span>refactor económico (Kong + servicios en la VM)</span></div>
+      <div><b>≈ $76</b><span>hoy: 1 VM de Azure D2s_v3 (≈ 266 mil COP/mes)</span></div>
+      <div><b>$78 – 92</b><span>refactor económico (Kong + servicios en la VM actual)</span></div>
       <div><b>$82 – 150</b><span>refactor administrado ligero</span></div>
       <div><b>≈ $580</b><span>con SLA/HA (APIM Basic v2 + BD con réplica)</span></div>
     </div>
-    <p class="sub" style="margin:0">Si la VM está apagada (desasignada) solo cobran el disco y la IP: ≈ $9/mes.</p>
+    <p class="sub" style="margin:0">Si la VM está apagada (desasignada) solo cobran el disco y la IP: ≈ $6/mes.</p>
   </div>
 
   <div class="card" style="margin-top:14px">
@@ -439,13 +439,13 @@
       <h4 style="margin:0 0 8px">Infraestructura de hoy</h4>
       <table>
         <tr><th>Componente</th><th>USD/mes</th></tr>
-        <tr><td>VM <code>Standard_B2s</code> (2 vCPU, 4 GB) <span class="pill warn">supuesto</span></td><td>30,37</td></tr>
-        <tr><td>Disco del SO (30 GB, Premium P4)</td><td>5,28</td></tr>
+        <tr><td>VM <code>Standard_D2s_v3</code> (2 vCPU, 8 GB) <span class="pill ok">verificado</span></td><td>70,08</td></tr>
+        <tr><td>Disco del SO (30 GB, Standard SSD E4) <span class="pill ok">verificado</span></td><td>2,40</td></tr>
         <tr><td>IP pública estática</td><td>3,65</td></tr>
         <tr><td>NIC, red virtual, NSG</td><td>0</td></tr>
-        <tr><td><b>Total Azure</b></td><td><b>≈ 39,30</b></td></tr>
+        <tr><td><b>Total Azure</b></td><td><b>≈ 76,13</b></td></tr>
       </table>
-      <p class="sub" style="margin:8px 0 0">La suscripción está <i>Disabled</i> y no se pudo leer el tamaño real de la VM; se asumió B2s (lo documentado). Verificar en Cost Management.</p>
+      <p class="sub" style="margin:8px 0 0">Verificado el 24 nov 2026 con Azure (suscripción Enabled). Antes se había supuesto una B2s (≈ $39); la VM real es el doble. Hoy está apagada y se inicia para desplegar.</p>
     </div>
     <div class="card">
       <h4 style="margin:0 0 8px">Piezas nuevas del refactor</h4>
@@ -469,8 +469,8 @@
     <h4 style="margin:0 0 8px">Proyección mensual (USD) por etapa</h4>
     <table>
       <tr><th>Arquitectura</th><th>Piloto<br><span class="s">100 pedidos · 500 usuarios</span></th><th>Crecimiento<br><span class="s">1.000 · 5.000</span></th><th>Escala<br><span class="s">10.000 · 50.000</span></th></tr>
-      <tr><td>Hoy: monolito en 1 VM</td><td>39</td><td>39</td><td>172 <span class="pill warn">1 solo servidor</span></td></tr>
-      <tr><td>A · Refactor económico (Kong + servicios en la VM)</td><td>76</td><td>90</td><td>281 <span class="s">(≈ 203 con CDN gratis)</span></td></tr>
+      <tr><td>Hoy: monolito en 1 VM</td><td>76</td><td>76</td><td>172 <span class="pill warn">1 solo servidor</span></td></tr>
+      <tr><td>A · Refactor económico (Kong + servicios en la VM actual)</td><td>78</td><td>92</td><td>281 <span class="s">(≈ 203 con CDN gratis)</span></td></tr>
       <tr><td>B · Administrado ligero (APIM Consumption + Container Apps + BD gestionada)</td><td>82</td><td>150</td><td>433</td></tr>
       <tr><td>C · Administrado con SLA/HA (APIM Basic v2 + BD con réplica + Front Door)</td><td colspan="3">≈ 578 de piso, sube con la escala</td></tr>
     </table>
@@ -507,8 +507,8 @@
   <div class="card" style="margin-top:14px">
     <h4 style="margin:0 0 8px">Recomendación</h4>
     <ol style="margin:0;padding-left:20px">
-      <li><b>Hoy:</b> apagar (desasignar) la VM mientras no se use (ahorra ≈ $30/mes) y activar un presupuesto con alertas en Cost Management.</li>
-      <li><b>Refactor:</b> empezar con la opción A (≈ $76–90/mes). Pasar a B al necesitar BD gestionada y escalado. APIM Basic v2 ($150) solo si se quiere portal, políticas y SLA de Microsoft; de $700 en adelante no se justifica a este tamaño.</li>
+      <li><b>Hoy:</b> apagar (desasignar) la VM mientras no se use (ahorra ≈ $70/mes) y activar un presupuesto con alertas en Cost Management. Bajar a <code>B2ms</code> (misma RAM) ahorraría ≈ $9/mes más.</li>
+      <li><b>Refactor:</b> empezar con la opción A (≈ $78–92/mes, casi lo mismo que hoy). Pasar a B al necesitar BD gestionada y escalado. APIM Basic v2 ($150) solo si se quiere portal, políticas y SLA de Microsoft; de $700 en adelante no se justifica a este tamaño.</li>
       <li><b>Antes de cobrar dinero real:</b> resolver la tarifa de Wompi (arriba). Es el mayor costo. Cambiar de proveedor de tarjeta no la resuelve; sí ayudan PSE, Bre-B y un cargo de servicio.</li>
     </ol>
   </div>
