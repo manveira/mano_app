@@ -324,7 +324,7 @@ Reglas importantes:
 | Webhooks | Ruta separada sin CORS, solo `POST`, body ≤ 64 KB, sin rate limit por usuario. |
 | No puede | Arreglar firmas Wompi, auto-confirm, seed, atomicidad, atribución guest (sección 6). Tampoco homogeneizar respuestas inconsistentes (ver 7.5) sin reescribir cuerpos. |
 
-**Elección recomendada: Kong OSS en modo DB-less** (config declarativa en YAML en el repo; plugins `cors`, `rate-limiting`, `request-termination`, `ip-restriction`, `jwt`/`request-transformer`, `prometheus`). Alternativa más liviana: **Traefik** (middlewares equivalentes, menor consumo). **Mantener nginx puro** es viable para la fase 1 (solo path routing + CORS + limit_req) pero escala peor en plugins/observabilidad. La VM B2s de 4 GB soporta cualquiera de los tres. Si en el futuro se migra a gestionado, Azure API Management es la opción natural dado que ya hay Azure.
+**Elección recomendada: Kong OSS en modo DB-less** (config declarativa en YAML en el repo; plugins `cors`, `rate-limiting`, `request-termination`, `ip-restriction`, `jwt`/`request-transformer`, `prometheus`). Alternativa más liviana: **Traefik** (middlewares equivalentes, menor consumo). **Mantener nginx puro** es viable para la fase 1 (solo path routing + CORS + limit_req) pero escala peor en plugins/observabilidad. La VM actual (`Standard_D2s_v3`, 2 vCPU y 8 GB, verificada en Azure el 24-nov-2026) soporta cualquiera de los tres. Costos de cada opción en `docs/COSTS.md` §3.1. Si en el futuro se migra a gestionado, Azure API Management es la opción natural dado que ya hay Azure.
 
 ### 7.4 Ruteo propuesto
 

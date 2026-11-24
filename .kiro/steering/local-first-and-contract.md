@@ -26,3 +26,8 @@ inclusion: always
 
 ## 5. Imágenes
 - Ver `design-assets-immutable.md`. Esta regla prevalece sobre todas las demás.
+
+## 6. Credenciales (regla añadida el 24-nov-2026 tras un incidente)
+- **Una credencial (contraseña, token, llave) vive solo como *secret* de GitHub o en un `.env` del servidor. Nunca en una *variable* (`vars.*`) de Actions**: las variables no se ocultan en los logs y los logs de este repositorio son públicos. Un workflow nunca debe leer una credencial de `vars.*`, ni como "compatibilidad".
+- Una credencial pegada en el chat, en un commit o en un log se considera comprometida: se recomienda cambiarla en el sistema de origen (el agente no la repite ni la escribe en ningún archivo).
+- Cuando haga falta una llave que el agente no puede crear (secrets de GitHub, contraseñas de la VM), se le pide al usuario con los pasos concretos; el agente no pide que se la pasen por el chat.

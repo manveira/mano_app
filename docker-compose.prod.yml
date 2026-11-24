@@ -103,9 +103,10 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      DOMAIN: ${DOMAIN}
+      DOMAIN: ${DOMAIN:-localhost}
     volumes:
-      - ./nginx.prod.conf:/etc/nginx/templates/default.conf.template:ro
+      # nginx.prod.conf = HTTPS con dominio (por defecto) · nginx.http.conf = solo HTTP por IP (sin DOMAIN; lo fija el workflow)
+      - ./${NGINX_CONF:-nginx.prod.conf}:/etc/nginx/templates/default.conf.template:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
       - /var/www/certbot:/var/www/certbot:ro
     depends_on:

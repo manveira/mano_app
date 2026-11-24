@@ -127,54 +127,132 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
           GHCR_USER: ${{ github.actor }}
           DEPLOY_SHA: ${{ github.sha }}
+          VM_HOST: ${{ secrets.AZURE_VM_HOST || vars.AZURE_VM_HOST }}
         with:
           host: ${{ secrets.AZURE_VM_HOST || vars.AZURE_VM_HOST }}
           username: ${{ secrets.AZURE_VM_USER || vars.AZURE_VM_USER }}
           key: ${{ secrets.AZURE_SSH_KEY }}
+          # SOLO como secret. NO usar vars.*: las variables no se ocultan en los logs y los logs de este repo son públicos.
           password: ${{ secrets.AZURE_VM_PASSWORD }}
           fingerprint: ${{ secrets.AZURE_VM_FINGERPRINT }}
-          envs: GHCR_TOKEN,GHCR_USER,DEPLOY_SHA
-          script_stop: true
+          envs: GHCR_TOKEN,GHCR_USER,DEPLOY_SHA,VM_HOST
           script: |
-            bash -s <<'REMOTE'
+            # El script se guarda en un archivo y se ejecuta con la entrada cerrada (< /dev/null). Con "bash -s <<EOF",
+            # un comando que lea stdin (docker compose exec) se come el resto del script y el paso termina "bien" sin terminar.
+            SCRIPT_FILE=$(mktemp /tmp/mano-deploy.XXXXXX)
+            cat > "$SCRIPT_FILE" <<'REMOTE'
             set -euo pipefail
             cd /opt/mano-app
             COMPOSE="docker compose -f docker-compose.prod.yml"
 
+            envget() { grep -E "^$1=" .env | head -1 | cut -d= -f2- | tr -d '\r'; }
+
             echo "▶ 1/6 Comprobando el .env del servidor"
             [ -f .env ] || { echo "❌ Falta /opt/mano-app/.env (ver docs/DEPLOY.md)"; exit 1; }
-            for v in GITHUB_OWNER POSTGRES_USER POSTGRES_PASSWORD REDIS_PASSWORD JWT_SECRET APP_BASE_URL DOMAIN; do
+            for v in GITHUB_OWNER POSTGRES_USER POSTGRES_PASSWORD REDIS_PASSWORD JWT_SECRET; do
               grep -qE "^${v}=.+" .env || { echo "❌ Falta ${v} en .env"; exit 1; }
             done
             JWT_LEN=$(grep -E '^JWT_SECRET=' .env | cut -d= -f2- | tr -d '\r' | wc -c)
             [ "$JWT_LEN" -ge 33 ] || { echo "❌ JWT_SECRET debe tener al menos 32 caracteres"; exit 1; }
+            if [ -z "$(envget DOMAIN)" ]; then
+              # Sin dominio: modo temporal solo HTTP por la IP (nginx.http.conf). Con DOMAIN se usa HTTPS (nginx.prod.conf).
+              echo "ℹ️  Sin DOMAIN en .env: modo HTTP por IP (sin TLS). Usa solo datos de prueba y llaves de Wompi de sandbox."
+              [ -n "${VM_HOST:-}" ] || { echo "❌ Falta AZURE_VM_HOST para armar APP_BASE_URL"; exit 1; }
+              export NGINX_CONF=nginx.http.conf
+              export APP_BASE_URL="http://${VM_HOST}"
+              echo "   APP_BASE_URL=${APP_BASE_URL}"
+            else
+              echo "ℹ️  DOMAIN=$(envget DOMAIN): modo HTTPS con dominio."
+              grep -qE "^APP_BASE_URL=.+" .env || { echo "❌ Falta APP_BASE_URL en .env"; exit 1; }
+            fi
 
             echo "▶ 2/6 Código exacto del commit ${DEPLOY_SHA}"
             git fetch --prune origin
             git checkout --force "${DEPLOY_SHA}"
 
             echo "▶ 3/6 Respaldo de la base de datos"
-            envget() { grep -E "^$1=" .env | head -1 | cut -d= -f2- | tr -d '\r'; }
             PGUSER_ENV=$(envget POSTGRES_USER); PGDB_ENV=$(envget POSTGRES_DB); PGDB_ENV=${PGDB_ENV:-mano}
-            mkdir -p /opt/mano-backups
+            # azureuser no puede escribir en /opt: los respaldos van a su carpeta personal
+            BACKUP_DIR="${HOME}/mano-backups"
+            mkdir -p "${BACKUP_DIR}"
             if $COMPOSE ps --status running --services 2>/dev/null | grep -qx postgres; then
-              $COMPOSE exec -T postgres pg_dump -U "${PGUSER_ENV}" "${PGDB_ENV}" | gzip > "/opt/mano-backups/mano-$(date +%Y%m%d-%H%M%S)-${DEPLOY_SHA:0:7}.sql.gz"
-              ls -1t /opt/mano-backups/*.sql.gz 2>/dev/null | tail -n +15 | xargs -r rm -f
-              echo "   respaldo guardado en /opt/mano-backups"
+              $COMPOSE exec -T postgres pg_dump -U "${PGUSER_ENV}" "${PGDB_ENV}" | gzip > "${BACKUP_DIR}/mano-$(date +%Y%m%d-%H%M%S)-${DEPLOY_SHA:0:7}.sql.gz"
+              ls -1t "${BACKUP_DIR}"/*.sql.gz 2>/dev/null | tail -n +15 | xargs -r rm -f
+              echo "   respaldo guardado en ${BACKUP_DIR}"
             else
               echo "   (postgres aún no corre: primer despliegue, no hay nada que respaldar)"
             fi
 
             echo "▶ 4/6 Descargando imágenes"
-            PREV_TAG=$(cat .last_good_tag 2>/dev/null || echo latest)
+            # Guarda las imágenes que corren HOY como ":rollback" (la etiqueta :latest ya fue sobrescrita por el build)
+            OWNER_ENV=$(envget GITHUB_OWNER)
+            for svc in backend frontend; do
+              cid=$($COMPOSE ps -q "$svc" 2>/dev/null | head -1 || true)
+              if [ -n "$cid" ]; then
+                img=$(docker inspect --format '{{.Image}}' "$cid" 2>/dev/null || true)
+                # Solo la primera vez: así ":rollback" conserva la versión anterior al primer intento y no se pisa con
+                # imágenes de un intento fallido (que ya serían las nuevas).
+                if ! docker image inspect "ghcr.io/${OWNER_ENV}/mano-${svc}:rollback" >/dev/null 2>&1; then
+                  [ -n "$img" ] && docker tag "$img" "ghcr.io/${OWNER_ENV}/mano-${svc}:rollback" || true
+                fi
+              fi
+            done
+            PREV_TAG=$(cat .last_good_tag 2>/dev/null || true)
+            if [ -z "$PREV_TAG" ]; then
+              if docker image inspect "ghcr.io/${OWNER_ENV}/mano-backend:rollback" >/dev/null 2>&1; then PREV_TAG=rollback; else PREV_TAG=none; fi
+            fi
+            echo "   versión anterior para reversión: ${PREV_TAG}"
             echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
             export IMAGE_TAG="${DEPLOY_SHA}"
             $COMPOSE pull backend frontend
 
-            echo "▶ 5/6 Levantando servicios"
-            $COMPOSE up -d --remove-orphans
+            # Reversión: vuelve a las imágenes anteriores y, si se había apartado el proxy viejo, lo restaura.
+            rollback() {
+              if [ "${PREV_TAG}" = none ]; then
+                echo "⚠️  No hay una versión anterior de backend/frontend a la que volver."
+              else
+                echo "↩  Reversión a la versión anterior (${PREV_TAG})"
+                IMAGE_TAG="${PREV_TAG}" $COMPOSE up -d --no-deps backend frontend || true
+              fi
+              if [ -n "${OLD_PROXIES}" ]; then
+                echo "↩  Restaurando el proxy anterior"
+                $COMPOSE rm -sf proxy >/dev/null 2>&1 || true
+                for n in ${OLD_PROXIES}; do docker rename "${n}-anterior" "${n}" 2>/dev/null || true; docker start "${n}" || true; done
+              fi
+            }
 
-            echo "▶ 6/6 Verificando que el backend quede sano"
+            echo "▶ 5/6 Levantando servicios"
+            # Un contenedor AJENO a este proyecto puede ocupar el puerto 80/443 (p. ej. el proxy nginx de la versión anterior):
+            # si es un nginx se detiene y se renombra "-anterior" (recuperable); si no es nginx no se toca y se aborta.
+            OLD_PROXIES=""
+            PROJECT=$(basename "$PWD" | tr 'A-Z' 'a-z')
+            for port in ${PUBLISHED_PORTS:-80 443}; do
+              for cid in $(docker ps -q --filter "publish=${port}"); do
+                proj=$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}' "$cid")
+                svc=$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.service" }}' "$cid")
+                name=$(docker inspect --format '{{.Name}}' "$cid" | sed 's#^/##')
+                image=$(docker inspect --format '{{.Config.Image}}' "$cid")
+                if [ "$proj" = "$PROJECT" ] && [ "$svc" = proxy ]; then continue; fi
+                echo "⚠️  ${name} (proyecto=${proj:-ninguno}, servicio=${svc:-ninguno}, imagen=${image}) ocupa el puerto ${port}"
+                case "$image" in
+                  nginx*|*/nginx*)
+                    echo "   Es un nginx (proxy de la versión anterior): se detiene y se renombra a ${name}-anterior"
+                    docker update --restart=no "$cid" >/dev/null 2>&1 || true
+                    docker stop "$cid" >/dev/null
+                    docker rename "$name" "${name}-anterior"
+                    OLD_PROXIES="${OLD_PROXIES} ${name}" ;;
+                  *) echo "❌ No es un nginx; no lo toco. Libera el puerto ${port} a mano."; exit 1 ;;
+                esac
+              done
+            done
+            if ! $COMPOSE up -d --remove-orphans; then
+              echo "❌ docker compose up falló."
+              $COMPOSE ps || true
+              rollback
+              exit 1
+            fi
+
+            echo "▶ 6/6 Verificando backend y web"
             OK=0
             for i in $(seq 1 30); do
               if $COMPOSE exec -T backend wget -qO- http://localhost:8080/api/health >/dev/null 2>&1; then OK=1; break; fi
@@ -183,23 +261,50 @@ jobs:
             if [ "$OK" != 1 ]; then
               echo "❌ El backend no respondió. Últimos logs:"
               $COMPOSE logs --tail 60 backend || true
-              echo "↩️  Reversión a la versión anterior (${PREV_TAG})"
-              export IMAGE_TAG="${PREV_TAG}"
-              $COMPOSE up -d --no-deps backend frontend || true
+              rollback
+              exit 1
+            fi
+            # Y la web a través del proxy (en el propio servidor): la home debe responder 200 y la API por el proxy también.
+            WEB=000; API=000
+            for i in $(seq 1 20); do
+              WEB=$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' http://localhost/ || true)
+              API=$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' http://localhost/api/health || true)
+              case "$WEB" in 200|301|302) wok=1 ;; *) wok=0 ;; esac   # 301/302: con dominio, el proxy redirige a HTTPS
+              case "$API" in 200|301|302) aok=1 ;; *) aok=0 ;; esac
+              [ "$wok" = 1 ] && [ "$aok" = 1 ] && break
+              sleep 3
+            done
+            if [ "${wok:-0}" != 1 ] || [ "${aok:-0}" != 1 ]; then
+              echo "❌ A través del proxy: web=${WEB}, api=${API}. Estado de los contenedores:"
+              $COMPOSE ps || true
+              $COMPOSE logs --tail 40 proxy frontend || true
+              rollback
               exit 1
             fi
             echo "${DEPLOY_SHA}" > .last_good_tag
             docker image prune -f >/dev/null 2>&1 || true
             $COMPOSE ps
-            echo "✅ Deploy completado — commit ${DEPLOY_SHA}"
+            echo "✅ Deploy completado — commit ${DEPLOY_SHA} (web=${WEB}, api=${API})"
+            [ -n "${NGINX_CONF:-}" ] && echo "🌐 Abre: ${APP_BASE_URL}" || true
             REMOTE
+            bash "$SCRIPT_FILE" < /dev/null
+            RC=$?
+            rm -f "$SCRIPT_FILE"
+            exit $RC
 
-      - name: Chequeo externo (si APP_URL está definida)
-        if: ${{ vars.APP_URL != '' }}
+      - name: Chequeo externo (la versión nueva está en línea)
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+          VM_HOST: ${{ secrets.AZURE_VM_HOST || vars.AZURE_VM_HOST }}
         run: |
+          BASE="${APP_URL:-http://${VM_HOST}}"
+          echo "Comprobando ${BASE}"
           for i in $(seq 1 12); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' "${{ vars.APP_URL }}/api/health" || true)
-            [ "$code" = 200 ] && { echo "✅ ${{ vars.APP_URL }}/api/health → 200"; exit 0; }
-            sleep 5
+            h=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/health" || true)
+            # /api/payments existe solo en la versión nueva: sin sesión debe responder 401 (la vieja daría 404)
+            n=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/payments" || true)
+            if [ "$h" = 200 ] && [ "$n" = 401 ]; then echo "✅ ${BASE}: health 200 y versión nueva activa (/api/payments 401)"; exit 0; fi
+            echo "   intento $i: health=$h payments=$n"; sleep 5
           done
-          echo "::error::${{ vars.APP_URL }}/api/health no respondió 200 (último código: $code)"; exit 1
+          echo "::error::${BASE} no muestra la versión nueva (health=$h, /api/payments=$n). El despliegue no quedó activo."
+          exit 1
