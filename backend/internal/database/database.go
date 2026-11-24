@@ -1,7 +1,14 @@
 package database
 
 import (
+	"crypto/rand"
+	"database/sql"
+	"encoding/hex"
+	"errors"
 	"log"
+	"os"
+	"regexp"
+	"strings"
 	"time"
 
 	"mano-app/backend/internal/models"
@@ -42,6 +49,7 @@ func New(dsn string) (*gorm.DB, error) {
 		&models.OrderItem{},
 		&models.CommissionSplit{},
 		&models.WompiTransaction{},
+		&models.WompiEvent{},
 		&models.WithdrawalRequest{},
 		&models.Story{},
 		&models.Advertisement{},
@@ -53,11 +61,23 @@ func New(dsn string) (*gorm.DB, error) {
 		return nil, err
 	}
 
+	if err := ensurePartialPhoneIndex(db); err != nil {
+		return nil, err
+	}
+
 	if err := seedAdvertisingPackages(db); err != nil {
 		return nil, err
 	}
 
-	if err := seedTestData(db); err != nil {
+	if shouldSeedDemo() {
+		if err := seedTestData(db); err != nil {
+			return nil, err
+		}
+	} else {
+		log.Println("seed de demostración desactivado (SEED_DEMO_DATA=false o MOCK_MODE distinto de true)")
+	}
+
+	if err := bootstrapAdmin(db); err != nil {
 		return nil, err
 	}
 
@@ -122,7 +142,7 @@ func seedTestData(db *gorm.DB) error {
 		Description: "Café artesanal con especialidad en espressos", Category: "Café",
 		Location: "Centro Histórico", Address: "Calle Principal 123",
 		Latitude: 1.7989, Longitude: -78.7628,
-		ImageURL: "https://images.unsplash.com/photo-1495521821757-a1efb6729352?w=400",
+		ImageURL:   "https://images.unsplash.com/photo-1495521821757-a1efb6729352?w=400",
 		IsFeatured: true, IsApproved: true, DefaultCommissionRate: 0.15,
 	}
 	business2 := models.Business{
@@ -130,7 +150,7 @@ func seedTestData(db *gorm.DB) error {
 		Description: "Hamacas, mochilas y artesanías del Pacífico colombiano", Category: "Artesanías",
 		Location: "Tumaco", Address: "Barrio El Morro 45",
 		Latitude: 1.8003, Longitude: -78.7612,
-		ImageURL: "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400",
+		ImageURL:   "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400",
 		IsFeatured: false, IsApproved: true, DefaultCommissionRate: 0.20,
 	}
 
@@ -257,5 +277,84 @@ func seedTestData(db *gorm.DB) error {
 	}
 
 	log.Println("test data seeded successfully")
+	return nil
+}
+
+// ensurePartialPhoneIndex garantiza que el índice único de users.phone ignore la cadena vacía.
+//
+// Hallazgo #18: con un índice único TOTAL, ” cuenta como valor duplicado y solo un usuario podía
+// registrarse sin teléfono. Las BD nuevas ya lo crean parcial por la etiqueta de GORM
+// (`where:phone <> ”`); las BD existentes todavía tienen el índice total, así que se reemplaza aquí.
+// Es idempotente: si el índice ya es parcial no hace nada. No cambia el contrato de la API.
+func ensurePartialPhoneIndex(db *gorm.DB) error {
+	var def string
+	err := db.Raw(`SELECT indexdef FROM pg_indexes
+		WHERE schemaname = current_schema() AND tablename = 'users' AND indexname = 'idx_users_phone'`).
+		Row().Scan(&def)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if err == nil && strings.Contains(strings.ToLower(def), "where") {
+		return nil // ya es parcial
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`DROP INDEX IF EXISTS idx_users_phone`).Error; err != nil {
+			return err
+		}
+		return tx.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone ON users (phone) WHERE phone <> ''`).Error
+	})
+}
+
+// shouldSeedDemo decide si se crean usuarios y negocios de demostración (con contraseñas conocidas).
+// SEED_DEMO_DATA=true|false manda; si no está definida, solo se siembra con MOCK_MODE=true (desarrollo/CI).
+// Nunca debe estar activo en producción: crea cuentas con la contraseña "password123".
+func shouldSeedDemo() bool {
+	switch strings.ToLower(os.Getenv("SEED_DEMO_DATA")) {
+	case "true", "1":
+		return true
+	case "false", "0":
+		return false
+	}
+	return os.Getenv("MOCK_MODE") == "true"
+}
+
+var adminUsernameRe = regexp.MustCompile(`[^a-z0-9._-]`)
+
+// bootstrapAdmin crea el primer administrador desde ADMIN_EMAIL y ADMIN_PASSWORD (mínimo 12 caracteres), solo si
+// todavía no existe ningún admin. Sirve para producción sin seed de demostración. Quitar ADMIN_PASSWORD del .env después.
+func bootstrapAdmin(db *gorm.DB) error {
+	email := strings.ToLower(strings.TrimSpace(os.Getenv("ADMIN_EMAIL")))
+	password := os.Getenv("ADMIN_PASSWORD")
+	if email == "" || password == "" {
+		return nil
+	}
+	if len(password) < 12 {
+		log.Println("AVISO: ADMIN_PASSWORD tiene menos de 12 caracteres; no se crea el administrador")
+		return nil
+	}
+	var n int64
+	db.Model(&models.User{}).Where("role = ?", "admin").Count(&n)
+	if n > 0 {
+		return nil
+	}
+	suffix := make([]byte, 3)
+	_, _ = rand.Read(suffix)
+	username := adminUsernameRe.ReplaceAllString(strings.SplitN(email, "@", 2)[0], "")
+	if len(username) < 3 {
+		username = "admin"
+	}
+	var taken int64
+	db.Model(&models.User{}).Where("username = ?", username).Count(&taken)
+	if taken > 0 {
+		username += "-" + hex.EncodeToString(suffix)
+	}
+	admin := models.User{
+		Name: "Administrador", Email: email, Password: hashPassword(password), Role: "admin",
+		Username: username, IsVerified: true, Plan: "free", ReferralCode: "ADM-" + strings.ToUpper(hex.EncodeToString(suffix)),
+	}
+	if err := db.Create(&admin).Error; err != nil {
+		return err
+	}
+	log.Printf("administrador inicial creado (%s). Quita ADMIN_PASSWORD del .env.", email)
 	return nil
 }

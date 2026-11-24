@@ -1,0 +1,209 @@
+# Schemas propios del dominio "core" (health, auth, usuario, negocios, productos, perfil público).
+# Verificado contra el backend local (MOCK_MODE=true) el 28-oct-2026.
+HealthResponse:
+  type: object
+  required: [status]
+  properties:
+    status: { type: string, example: ok }
+
+SignUpRequest:
+  type: object
+  description: |
+    Etiquetas `binding` del backend. `role` NO admite `admin`. `password` mínimo 8 caracteres.
+    Si `username` falta se genera a partir de `name` (minúsculas, sin espacios, con sufijo numérico si ya existe).
+    `referral_code` desconocido se ignora en silencio. `phone`, si viene, debe ser único.
+  required: [name, email, password, role]
+  properties:
+    name: { type: string, example: Contrato Core Uno }
+    email: { type: string, format: email, example: core.uno@example.com, description: Se guarda en minúsculas }
+    password: { type: string, minLength: 8, example: password123 }
+    role: { type: string, enum: [business_owner, freelancer, customer, courier, service_provider], description: "courier = Domiciliario, service_provider = Prestación de servicios (añadidos en v1.1, aditivo)" }
+    phone:
+      type: string
+      example: '3991110002'
+      description: |
+        Opcional. Si viene, debe ser único. Registrarse SIN teléfono ya no tiene límite (hallazgo #18 corregido:
+        el índice único ignora la cadena vacía).
+    document_id: { type: string, description: Cédula; usada por el anti-fraude comprador = comisionista }
+    nequi_number: { type: string }
+    username:
+      type: string
+      example: coredos
+      description: "Opcional. Se normaliza (minúsculas, sin espacios laterales) y debe cumplir 3–30 caracteres [a-z0-9._-]; si no, 400 'invalid username ...'. Duplicado: 400 'username already taken'."
+    referral_code: { type: string, description: Código de quien invitó (de `GET /sell/referral-code` o el campo `referral_code` de otro usuario) }
+
+SignUpResponse:
+  type: object
+  description: Respuesta mínima y NO el modelo `User` completo (no devuelve `name`, `phone`, `referral_code`, etc.).
+  properties:
+    id: { type: integer, format: int64, example: 23 }
+    email: { type: string, format: email, description: En minúsculas }
+    role: { type: string, enum: [business_owner, freelancer, customer, courier, service_provider], description: "courier = Domiciliario, service_provider = Prestación de servicios (añadidos en v1.1, aditivo)" }
+    username: { type: string, example: contratocoreuno }
+
+SignInRequest:
+  type: object
+  required: [email, password]
+  properties:
+    email: { type: string, format: email, description: Se compara en minúsculas }
+    password: { type: string }
+
+SignInUser:
+  type: object
+  description: Resumen del usuario devuelto en el login (4 campos, no el modelo `User`).
+  properties:
+    id: { type: integer, format: int64 }
+    name: { type: string }
+    email: { type: string, format: email }
+    role: { type: string, enum: [customer, business_owner, freelancer, courier, service_provider, admin] }
+
+SignInResponse:
+  type: object
+  properties:
+    token: { type: string, description: "JWT HS256 válido 72 h. Claims `user_id`, `role`, `email`, `exp`, `iat`." }
+    user: { $ref: '#/components/schemas/SignInUser' }
+
+MeResponse:
+  type: object
+  description: |
+    Usuario envuelto en `user`. Solo se seleccionan `id, name, email, role, username, plan, plan_expires_at,
+    earnings_balance, is_verified`; los demás campos de `User` (`document_id`, `phone`, `nequi_number`,
+    `referred_by`) llegan vacíos. Desde v1.1 `document_id`, `phone`, `nequi_number` y `referral_code` SÍ vienen
+    con su valor (son datos del propio usuario).
+  properties:
+    user: { $ref: '#/components/schemas/User' }
+
+BusinessListResponse:
+  type: object
+  description: Lista envuelta. Los `Business` de listas NO traen `products` ni `advertisements` (omitidos por `omitempty`).
+  properties:
+    businesses:
+      type: array
+      nullable: true
+      items: { $ref: '#/components/schemas/Business' }
+
+BusinessDetailResponse:
+  type: object
+  description: |
+    INCONSISTENCIA: `products` aparece duplicado — dentro de `business.products` (precarga GORM, omitido si está
+    vacío) y en el nivel superior. No filtra por `is_approved` ni por `is_active`/`is_exclusive`: devuelve TODOS
+    los productos (activos, inactivos, exclusivos Pro) de cualquier negocio, incluso no aprobado.
+  properties:
+    business: { $ref: '#/components/schemas/Business' }
+    products:
+      type: array
+      nullable: true
+      items: { $ref: '#/components/schemas/Product' }
+
+ProductListResponse:
+  type: object
+  properties:
+    products:
+      type: array
+      nullable: true
+      items: { $ref: '#/components/schemas/Product' }
+
+BusinessCreateRequest:
+  type: object
+  required: [name, description, category, location]
+  properties:
+    name: { type: string, example: Contrato Core Tienda }
+    description: { type: string }
+    category: { type: string }
+    location: { type: string, example: Tumaco }
+    address: { type: string }
+    latitude: { type: number }
+    longitude: { type: number }
+    image_url: { type: string }
+    default_commission_rate:
+      type: number
+      description: Fracción 0.10–0.40. Fuera de rango (o ausente) se reemplaza SIN error por 0.15.
+    monthly_limit: { type: integer, description: Unidades por mes; 0 = sin límite }
+
+BusinessPatchRequest:
+  type: object
+  description: |
+    Todos los campos son opcionales; solo se actualizan los que traen valor distinto del cero del tipo
+    (`""` o fuera de rango = "no cambiar"). Imposible vaciar un texto. `latitude`, `longitude`, `category`,
+    `monthly_limit` y `is_approved` NO son editables por este endpoint (se ignoran).
+  properties:
+    name: { type: string, description: Si cambia, se regenera `slug` (único) }
+    description: { type: string }
+    image_url: { type: string }
+    default_commission_rate: { type: number, description: Solo se aplica si está entre 0.10 y 0.40 (inclusive); si no, se ignora en silencio }
+    address: { type: string }
+    location: { type: string }
+
+BusinessApplyRequest:
+  type: object
+  required: [business_name, category, description, nequi_number]
+  properties:
+    business_name: { type: string, example: Contrato Core Negocio }
+    category: { type: string }
+    description: { type: string }
+    nequi_number: { type: string }
+    document_image_url: { type: string, description: URL de la foto del RUT/cédula (opcional) }
+
+BusinessApplyResponse:
+  type: object
+  properties:
+    application: { $ref: '#/components/schemas/BusinessApplication' }
+    message: { type: string, example: Application submitted. Review takes 24-48 hours. }
+
+ProductCreateRequest:
+  type: object
+  description: |
+    OJO con `binding:"required"` de Go: un número igual a 0 se considera ausente, así que `stock: 0` se rechaza con 400
+    aunque la regla diga `gte=0` (no se puede crear un producto sin stock).
+  required: [business_id, name, description, price, stock]
+  properties:
+    business_id: { type: integer, format: int64, minimum: 1 }
+    name: { type: string }
+    description: { type: string }
+    price: { type: number, exclusiveMinimum: true, minimum: 0, description: COP, debe ser > 0 }
+    stock: { type: integer, minimum: 1, description: "En la práctica ≥ 1 (0 es rechazado por `required`)" }
+    image_url: { type: string }
+    commission_rate:
+      type: number
+      description: |
+        Fracción 0.10–0.40. Si falta o es 0 se usa `default_commission_rate` del negocio. Si viene fuera de rango
+        responde 400 (a diferencia de `POST /businesses`, que corrige en silencio).
+    is_exclusive: { type: boolean, default: false }
+
+ProductPatchRequest:
+  type: object
+  description: |
+    Solo `is_active` tiene efecto; cualquier otro campo se ignora. Al cambiar `is_active` también se sincroniza
+    `is_active` de todos los `ReferralLink` del producto. Un objeto `{}` es válido y no cambia nada (200).
+  properties:
+    is_active: { type: boolean, nullable: true }
+
+BusinessPublicStats:
+  type: object
+  properties:
+    total_orders: { type: integer, format: int64, description: Órdenes con `payment_status = paid` }
+    total_revenue: { type: number, description: Suma de `total_amount` de esas órdenes (COP) }
+
+BusinessPublicProfileResponse:
+  type: object
+  description: Perfil público por slug. Solo negocios aprobados; los productos son los `is_active` (incluye exclusivos Pro, sin filtrar).
+  properties:
+    business: { $ref: '#/components/schemas/Business' }
+    products:
+      type: array
+      nullable: true
+      items: { $ref: '#/components/schemas/Product' }
+    stats: { $ref: '#/components/schemas/BusinessPublicStats' }
+    slug: { type: string, description: Eco del parámetro de ruta }
+
+UpdateMeRequest:
+  type: object
+  description: |
+    Todos los campos son opcionales; solo cambian los que vienen. `""` en `phone`, `nequi_number` o `document_id` los borra.
+    Se ignoran espacios, guiones y puntos. Validaciones: `name` 2–80 caracteres; `phone` 7–15 dígitos y único;
+    `nequi_number` exactamente 10 dígitos; `document_id` 5–15 dígitos.
+  properties:
+    name: { type: string }
+    phone: { type: string }
+    nequi_number: { type: string }
+    document_id: { type: string }

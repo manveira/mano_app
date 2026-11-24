@@ -1,0 +1,518 @@
+# Dominio: comisionistas (sell), referidos, vitrina pública y dashboards. Rutas SIN prefijo /api.
+# Todas verificadas en vivo (MOCK_MODE=true) salvo lo indicado en cada descripción.
+
+/sell/affiliate:
+  post:
+    tags: [Comisionistas]
+    operationId: sellAffiliate
+    summary: Afiliarse a un producto y obtener el link de referido
+    description: |
+      **Rol: `freelancer`** (se valida dentro del handler, ANTES de leer el body: un no-freelancer con body inválido recibe 403).
+
+      Orden de validación real: rol (403) → JSON/`product_id` (400) → producto existe (404) → producto activo (400) →
+      si `is_exclusive`, plan Pro vigente (403) → ¿ya existe un link activo para ese comisionista × producto? (200).
+
+      Respuesta con **dos formas**: 201 (link nuevo; trae `url`, sin `message`) y 200 (ya afiliado; trae `message`, sin `url`).
+      El slug es `<nombre-normalizado>-<userId>-<4 chars aleatorios>` (se eliminan tildes/ñ: "Cappuccino Clásico" => `cappuccino-clsico-…`).
+      `referral_link.freelancer` y `.product` vienen con ceros (no precargados).
+      El 403 de plan Pro y el 400 de producto inactivo no se pudieron verificar en vivo (la semilla no tiene productos exclusivos
+      ni inactivos); se documentan por lectura del código.
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SellAffiliateRequest' }
+          example: { product_id: 4 }
+    responses:
+      '201':
+        description: Link creado.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SellAffiliateResponse' }
+            example:
+              referral_link:
+                id: 16
+                freelancer_id: 24
+                freelancer: { id: 0, name: '', email: '', role: '', username: '', document_id: '', phone: '', nequi_number: '', is_verified: false, plan: '', plan_expires_at: null, earnings_balance: 0, referral_code: '', referred_by: null }
+                product_id: 4
+                product: { id: 0, business_id: 0, name: '', description: '', price: 0, stock: 0, image_url: '', commission_rate: 0, is_active: false, is_exclusive: false }
+                business_id: 2
+                slug: hamaca-artesanal-24-kgz1
+                clicks: 0
+                conversions: 0
+                is_active: true
+                created_at: '2026-10-28T04:30:32.943669797Z'
+              url: http://localhost:3000/r/hamaca-artesanal-24-kgz1
+      '200':
+        description: El comisionista ya tenía un link activo para ese producto (se devuelve el existente, sin `url`).
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SellAffiliateResponse' }
+            example:
+              message: already affiliated
+              referral_link:
+                id: 16
+                freelancer_id: 24
+                freelancer: { id: 0, name: '', email: '', role: '', username: '', document_id: '', phone: '', nequi_number: '', is_verified: false, plan: '', plan_expires_at: null, earnings_balance: 0, referral_code: '', referred_by: null }
+                product_id: 4
+                product: { id: 0, business_id: 0, name: '', description: '', price: 0, stock: 0, image_url: '', commission_rate: 0, is_active: false, is_exclusive: false }
+                business_id: 2
+                slug: hamaca-artesanal-24-kgz1
+                clicks: 0
+                conversions: 0
+                is_active: true
+                created_at: '2026-10-28T04:30:32.943669Z'
+      '400':
+        description: |
+          Body inválido (mensaje crudo de gin/Go) o producto inactivo (`product is not active`).
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            examples:
+              missingProductId:
+                value: { error: "Key: 'affiliateRequest.ProductID' Error:Field validation for 'ProductID' failed on the 'required' tag" }
+              wrongType:
+                value: { error: 'json: cannot unmarshal string into Go struct field affiliateRequest.product_id of type uint' }
+              malformedJson:
+                value: { error: unexpected EOF }
+              inactiveProduct:
+                value: { error: product is not active }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403':
+        description: No es freelancer (`only freelancers can affiliate to products`) o el producto es exclusivo y no tiene Pro vigente (`this product requires a Pro plan`).
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            examples:
+              notFreelancer:
+                value: { error: only freelancers can affiliate to products }
+              requiresPro:
+                value: { error: this product requires a Pro plan }
+      '404':
+        description: Producto inexistente.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            example: { error: product not found }
+      '500': { $ref: '#/components/responses/ServerError' }
+
+/sell/links:
+  get:
+    tags: [Comisionistas]
+    operationId: sellListLinks
+    summary: Listar los links de referido activos del comisionista
+    description: |
+      **Rol: `freelancer`** (validado en el handler).
+      Solo links con `is_active = true`. Cada link incluye `product` precargado, `freelancer` con ceros y un campo `url`
+      adicional (`APP_BASE_URL` + `/r/` + slug; en local `http://localhost:3000`). Sin links => `links: []` (no `null`).
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Links y saldo.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SellLinksResponse' }
+            example:
+              earnings_balance: 24000
+              links:
+                - id: 16
+                  freelancer_id: 24
+                  freelancer: { id: 0, name: '', email: '', role: '', username: '', document_id: '', phone: '', nequi_number: '', is_verified: false, plan: '', plan_expires_at: null, earnings_balance: 0, referral_code: '', referred_by: null }
+                  product_id: 4
+                  product: { id: 4, business_id: 2, name: Hamaca Artesanal, description: 'Hamaca tejida a mano, colores del Pacífico', price: 120000, stock: 13, image_url: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=300', commission_rate: 0.2, is_active: true, is_exclusive: false }
+                  business_id: 2
+                  slug: hamaca-artesanal-24-kgz1
+                  clicks: 0
+                  conversions: 1
+                  is_active: true
+                  created_at: '2026-10-28T04:30:32.943669Z'
+                  url: http://localhost:3000/r/hamaca-artesanal-24-kgz1
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403':
+        description: No es freelancer.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            example: { error: only freelancers can view their links }
+
+/sell/referral-code:
+  get:
+    tags: [Referidos]
+    operationId: sellGetReferralCode
+    summary: Código de referido del usuario para invitar a otros
+    description: |
+      **Cualquier usuario autenticado** (no valida rol, a diferencia del resto de `/sell/*`; verificado con un `customer`).
+      `bonus_per_referral` es una constante (5000) fija en el handler.
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Código y enlace de invitación.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SellReferralCodeResponse' }
+            example:
+              bonus_per_referral: 5000
+              referral_code: testLC9E3D
+              referral_url: http://localhost:3000/signup?ref=testLC9E3D
+              referred_count: 0
+      '401': { $ref: '#/components/responses/Unauthorized' }
+
+/sell/stats:
+  get:
+    tags: [Comisionistas]
+    operationId: sellGetStats
+    summary: Estadísticas avanzadas por link (solo plan Pro)
+    description: |
+      **Rol: `freelancer`** y **plan Pro vigente** (`plan = 'pro'` y `plan_expires_at` nulo o futuro). Ambos fallos devuelven 403
+      con mensajes distintos. Solo links activos. `earned_total` es una estimación (conversiones × precio actual × tasa actual),
+      no lo realmente cobrado. `plan_expires` es `null` si el Pro no tiene vencimiento.
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Estadísticas.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SellStatsResponse' }
+            example:
+              links:
+                - { slug: hamaca-artesanal-24-kgz1, product_name: Hamaca Artesanal, clicks: 2, conversions: 1, conversion_rate_pct: 50, earned_total: 24000 }
+              plan_expires: '2026-11-27T04:30:57.440384Z'
+              total_balance: 18000
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403':
+        description: No es freelancer o no tiene plan Pro vigente.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            examples:
+              notFreelancer:
+                value: { error: only freelancers can view stats }
+              requiresPro:
+                value: { error: advanced stats require Pro plan }
+
+/sell/withdraw:
+  post:
+    tags: [Comisionistas]
+    operationId: sellWithdraw
+    summary: Solicitar retiro del saldo a Nequi
+    description: |
+      **Rol: `freelancer`** (validado ANTES del body).
+
+      Orden de validación real: rol (403) → body (400; `amount` `required,gt=0` y `nequi_number` `required`) →
+      **saldo suficiente** (400 `insufficient balance` + campo extra `balance`) → **mínimo 5000 COP** (400).
+      Consecuencia: con saldo 0 y `amount: 3000` se responde `insufficient balance`, no el mínimo.
+
+      Efecto: descuenta el saldo inmediatamente y crea un `WithdrawalRequest` en estado `pending` (lo procesa un admin en
+      `PATCH /admin/withdrawals/process/{id}`). No usa transacción: el descuento y la creación son pasos separados (con reversión
+      manual si falla la creación).
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SellWithdrawRequest' }
+          example: { amount: 6000, nequi_number: '3009990001' }
+    responses:
+      '201':
+        description: Solicitud creada.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SellWithdrawResponse' }
+            example:
+              message: Withdrawal request created. Processing in 1-2 business days.
+              remaining_balance: 18000
+              withdrawal:
+                id: 3
+                freelancer_id: 24
+                amount: 6000
+                nequi_number: '3009990001'
+                status: pending
+                processed_at: null
+                notes: ''
+                created_at: '2026-10-28T04:30:57.404653249Z'
+      '400':
+        description: |
+          Body inválido (mensaje crudo del validador), saldo insuficiente (con `balance`) o monto menor a 5000.
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/Error'
+                - $ref: '#/components/schemas/SellInsufficientBalanceError'
+            examples:
+              missingNequi:
+                value: { error: "Key: 'withdrawalRequest.NequiNumber' Error:Field validation for 'NequiNumber' failed on the 'required' tag" }
+              zeroAmount:
+                value: { error: "Key: 'withdrawalRequest.Amount' Error:Field validation for 'Amount' failed on the 'required' tag" }
+              negativeAmount:
+                value: { error: "Key: 'withdrawalRequest.Amount' Error:Field validation for 'Amount' failed on the 'gt' tag" }
+              insufficientBalance:
+                value: { error: insufficient balance, balance: 24000 }
+              belowMinimum:
+                value: { error: 'minimum withdrawal is $5.000 COP' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403':
+        description: No es freelancer.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            example: { error: only freelancers can request withdrawals }
+      '500': { $ref: '#/components/responses/ServerError' }
+
+/sell/upgrade-pro:
+  post:
+    tags: [Comisionistas]
+    operationId: sellUpgradePro
+    summary: Activar el plan Pro por 30 días
+    description: |
+      **Rol: `freelancer`**. Sin body.
+
+      **Comportamiento mock/actual:** NO cobra nada (el comentario del código dice que en producción serían $15.000 vía Wompi, aún sin implementar):
+      activa el plan directamente. Es repetible: cada llamada fija `plan_expires_at = ahora + 30 días` (sobrescribe, no extiende).
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Plan activado.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SellUpgradeProResponse' }
+            example:
+              message: Plan Pro activado por 30 días
+              plan: pro
+              plan_expires_at: '2026-11-27T04:30:57.440384053Z'
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403':
+        description: No es freelancer.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            example: { error: only freelancers can upgrade to Pro }
+      '500': { $ref: '#/components/responses/ServerError' }
+
+/r/{slug}:
+  get:
+    tags: [Referidos]
+    operationId: trackReferralClick
+    summary: Resolver un link de referido (registra un click)
+    description: |
+      **Público. GET CON EFECTO SECUNDARIO:** cada llamada válida inserta un `ReferralClick` (IP + User-Agent) e incrementa
+      `clicks` del link (sin deduplicar; ni caché ni prefetch son seguros). Verificado: 2 llamadas => `clicks: 2`.
+
+      **No redirige:** responde 200 con JSON del producto; el frontend decide a dónde navegar. Los dos 400 llevan el mismo mensaje
+      (link inactivo y producto inactivo) y no registran click. La ruta del navegador del web es `/r/{slug}` (APP_BASE_URL), pero
+      este endpoint vive en el API. Con el seed: `hamaca-casa-narino-maria-x7k2`.
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema: { type: string }
+        example: hamaca-casa-narino-maria-x7k2
+    responses:
+      '200':
+        description: Producto asociado; click registrado.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SellReferralClickResponse' }
+            example:
+              business_id: 2
+              product:
+                id: 4
+                business_id: 2
+                name: Hamaca Artesanal
+                description: Hamaca tejida a mano, colores del Pacífico
+                price: 120000
+                stock: 13
+                image_url: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=300'
+                commission_rate: 0.2
+                is_active: true
+                is_exclusive: false
+              referral_link_id: 1
+      '400':
+        description: El link o su producto están inactivos (mismo mensaje en ambos casos; no verificado en vivo, por lectura del código).
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            example: { error: product is no longer available }
+      '404':
+        description: Slug inexistente.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            example: { error: link not found }
+
+/vendedor/{username}:
+  get:
+    tags: [Comisionistas]
+    operationId: getFreelancerStorefront
+    summary: Vitrina pública de un comisionista
+    description: |
+      **Público.** Busca `username` EXACTO (distingue mayúsculas) con `role = 'freelancer'`: un username de otro rol responde 404
+      igual que uno inexistente. Lista sus links activos cuyo producto está activo, con `referral_url` (`APP_BASE_URL` + `/r/` + slug).
+      Sin productos => `products: []`. No expone email, saldo ni plan.
+    parameters:
+      - name: username
+        in: path
+        required: true
+        schema: { type: string }
+        example: maria
+    responses:
+      '200':
+        description: Perfil y productos del comisionista.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SellStorefrontResponse' }
+            example:
+              freelancer: { name: Test Sell, username: testsell }
+              products:
+                - id: 4
+                  name: Hamaca Artesanal
+                  description: Hamaca tejida a mano, colores del Pacífico
+                  price: 120000
+                  image_url: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=300'
+                  commission_rate: 0.2
+                  referral_slug: hamaca-artesanal-24-kgz1
+                  referral_url: http://localhost:3000/r/hamaca-artesanal-24-kgz1
+      '404':
+        description: Comisionista inexistente (o el username no pertenece a un freelancer).
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            example: { error: freelancer not found }
+
+/dashboard:
+  get:
+    tags: [Dashboards]
+    operationId: getBusinessDashboard
+    summary: Resumen simple de órdenes e ingresos por negocio
+    description: |
+      **Rol: `business_owner`** (validado en el handler). Devuelve una fila por negocio del owner (aprobado o no).
+      `orders`/`revenue` cuentan órdenes con status en (`pending`, `completed`, `delivered`): `pending` no es un status real
+      (el real es `pending_payment`) y quedan fuera `paid`, `dispatched` e `in_transit`. Para métricas fiables usar
+      `GET /dashboard/business/stats`.
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Resumen por negocio.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BusinessDashboardResponse' }
+            example:
+              dashboard:
+                - { business_id: 1, name: Café La Esquina, orders: 8, revenue: 68000 }
+                - { business_id: 2, name: Artesanías Casa Nariño, orders: 13, revenue: 1525000 }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403':
+        description: No es business_owner.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            example: { error: only business owners can view dashboard }
+      '500': { $ref: '#/components/responses/ServerError' }
+
+/dashboard/business/stats:
+  get:
+    tags: [Dashboards]
+    operationId: getBusinessDashboardStats
+    summary: Estadísticas del negocio por período
+    description: |
+      **Rol: `business_owner`** (validado en el handler). Agrega TODOS los negocios del owner, solo órdenes con
+      `payment_status = 'paid'`. Ventana: 30 días si `period=30d`; **cualquier otro valor (o ausente) usa 7 días**, y `period`
+      se devuelve tal cual lo enviado (`?period=foo` => `"period": "foo"`).
+
+      Rarezas: (1) `top_freelancers[].commission_earned` siempre es 0 (defecto de mapeo GORM). (2) Con negocios pero sin ventas los
+      arrays pueden venir `null`. (3) Si el owner no tiene negocios la respuesta omite `period` y trae arrays vacíos.
+      (4) `day` es un datetime a medianoche UTC, no `YYYY-MM-DD`.
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - name: period
+        in: query
+        required: false
+        description: "`7d` (default) o `30d`. Otros valores se aceptan sin error y equivalen a 7 días."
+        schema: { type: string, enum: ['7d', '30d'], default: '7d' }
+    responses:
+      '200':
+        description: Estadísticas.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BusinessDashboardStatsResponse' }
+            example:
+              period: 7d
+              sales_by_day:
+                - { day: '2026-10-28T00:00:00Z', orders: 23, revenue: 1948500 }
+              top_products:
+                - { product_id: 4, product_name: Hamaca Artesanal, quantity_sold: 7, revenue: 840000 }
+                - { product_id: 1, product_name: Espresso Doble, quantity_sold: 7, revenue: 31500 }
+              top_freelancers:
+                - { freelancer_id: 3, freelancer_name: María García, sales: 7, commission_earned: 0 }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403':
+        description: No es business_owner.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            example: { error: only business owners can view stats }
+
+/dashboard/freelancer:
+  get:
+    tags: [Dashboards]
+    operationId: getFreelancerDashboard
+    summary: Ingresos y top productos del comisionista por período
+    description: |
+      **Rol: `freelancer`** (validado en el handler; un business_owner recibe 403). Solo órdenes con `payment_status = 'paid'`
+      del comisionista. Ventana: 30 días si `period=30d`; **cualquier otro valor usa 7 días** y `period` se devuelve tal cual
+      se envió. Sin ventas, `earnings_by_day` y `top_products` llegan como `null` (no `[]`). `day` es medianoche UTC en formato date-time.
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - name: period
+        in: query
+        required: false
+        description: "`7d` (default) o `30d`. Otros valores se aceptan sin error y equivalen a 7 días."
+        schema: { type: string, enum: ['7d', '30d'], default: '7d' }
+    responses:
+      '200':
+        description: Dashboard del comisionista.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FreelancerDashboardResponse' }
+            examples:
+              withSales:
+                value:
+                  balance: 18000
+                  earnings_by_day:
+                    - { day: '2026-10-28T00:00:00Z', sales: 1, earnings: 24000 }
+                  period: 30d
+                  period_total: 24000
+                  top_products:
+                    - { product_id: 4, product_name: Hamaca Artesanal, sales: 1, earned: 24000 }
+              noSales:
+                value: { balance: 0, earnings_by_day: null, period: 7d, period_total: 0, top_products: null }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403':
+        description: No es freelancer.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            example: { error: only freelancers can view this dashboard }
+
+/sell/movements:
+  get:
+    tags: [Comisionistas]
+    operationId: sellMovements
+    summary: Movimientos del comisionista (comisiones liberadas y retiros)
+    description: |
+      Añadido en v1.1 (aditivo). Solo rol `freelancer` (otros: 403). Mezcla las comisiones ya liberadas (`amount` > 0)
+      y las solicitudes de retiro (`amount` < 0), de la más reciente a la más antigua, máximo 100.
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Movimientos.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MovementsResponse' }
+            example:
+              movements:
+                - { type: withdrawal, title: Retiro a tu cuenta, amount: -5000, status: pending, created_at: '2026-11-24T10:00:00Z' }
+                - { type: commission, title: Comisión por venta, amount: 24000, status: released, order_id: 31, created_at: '2026-11-24T09:00:00Z' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }

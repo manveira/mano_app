@@ -10,6 +10,9 @@ import (
 
 func main() {
 	cfg := config.Load()
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("configuración insegura: %v", err)
+	}
 	db, err := database.New(cfg.DatabaseDSN)
 	if err != nil {
 		log.Fatalf("failed to connect database: %v", err)

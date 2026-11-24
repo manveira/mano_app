@@ -4,7 +4,10 @@ import { useRouter } from 'next/router'
 import Header from '../components/Header'
 
 // Páginas donde NO se muestra el header (son full-screen por diseño)
-const NO_HEADER_PAGES = ['/', '/signup', '/signin', '/profile']
+const NO_HEADER_PAGES = [
+  '/', '/signup', '/signin', '/profile', '/elegir-rol', '/registro', '/comisionista', '/comisiones',
+  '/catalogo', '/buscar-negocios', '/vendedor/[username]', '/movimientos', '/ajustes', '/ayuda',
+]
 
 export default function MyApp({ Component, pageProps }: AppProps) {
   const router = useRouter()

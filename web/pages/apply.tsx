@@ -68,7 +68,7 @@ export default function Apply() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Categoría *</label>
             <select className="w-full border rounded px-3 py-2" value={form.category} onChange={set('category')} required disabled={loading}>
               <option value="">Selecciona una categoría</option>
-              {['Café', 'Restaurante', 'Artesanías', 'Ropa', 'Hotel', 'Turismo', 'Servicios', 'Otro'].map(c => (
+              {['Moda', 'Alimentos', 'Hogar', 'Café', 'Restaurante', 'Artesanías', 'Ropa', 'Hotel', 'Turismo', 'Servicios', 'Otro'].map(c => (
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>

@@ -1,203 +1,99 @@
-# DEPLOY.md — Guía de deploy paso a paso
+# DEPLOY.md — Despliegue en Azure (procedimiento)
 
-Pasos exactos para llevar Mano App de local a producción en Azure con dominio de AWS Route 53.
+Última actualización: 25-nov-2026. Reemplaza la guía anterior (que desplegaba con cada `push` a `main`; eso ya no existe).
 
----
+**Resumen:** el código vive en GitHub; el despliegue se lanza **a mano** desde GitHub Actions; construye las imágenes, las sube a GHCR, entra por SSH a la VM de Azure, hace un respaldo de la base de datos, levanta la versión nueva y comprueba que esté sana (si no, vuelve a la anterior). Un `push` o un merge **nunca** despliegan solos.
 
-## Estado actual del repo
+```
+GitHub (Actions → Deploy Mano App → Run workflow, escribir DEPLOY)
+   ├─ test    : go vet/build/test · tsc · imágenes del diseñador intactas
+   ├─ build   : imágenes mano-backend y mano-frontend en GHCR (tag = SHA del commit)
+   └─ deploy  : SSH → /opt/mano-app → respaldo BD → docker compose up → chequeo de salud → (reversión si falla)
+```
 
-- Repo git inicializado localmente con commit inicial `bae1a74`
-- 84 archivos, 15.462 líneas de código
-- App corriendo en `http://localhost` con Docker Compose
-- CI/CD configurado en `.github/workflows/deploy.yml`
+## 1. Cuando Azure active la suscripción (checklist, en este orden)
 
----
+Estado conocido al 25-nov-2026: la suscripción `manve-subs` figura **Disabled** (el pago aún no estaba procesado) y no se pudo leer el estado de la VM `mano-app-vm`.
 
-## Paso 1 — Subir a GitHub
+1. **Azure Portal → Suscripciones**: confirma que `manve-subs` esté **Activa**.
+2. **Portal → Máquinas virtuales → `mano-app-vm` → Iniciar** (Start).
+3. **IP pública** (`mano-app-vm-ip`): mira si la asignación es **Estática**. Si es dinámica, la IP pudo cambiar al reiniciar: actualiza la variable `AZURE_VM_HOST` en GitHub y el registro **A** del dominio (Route 53). Recomendado: ponerla Estática (Portal → IP pública → Configuración).
+4. **Una sola vez para esta versión, por SSH a la VM** (`ssh <usuario>@<IP>`), edita `/opt/mano-app/.env` (ver §3). El workflow se detiene con un mensaje claro si falta algo.
+5. **GitHub → Actions → Deploy Mano App → Run workflow**: rama `main`, escribe `DEPLOY` en `confirm`.
+6. **Wompi**: pega `https://TU_DOMINIO/api/webhooks/wompi` en *Desarrollo → Programadores → URL de Eventos* (con el modo de pruebas activo si usas llaves de prueba).
+7. **Verifica** (§5).
 
+## 2. Configuración en GitHub (una sola vez)
+
+*Settings → Secrets and variables → Actions*.
+
+| Tipo | Nombre | Valor |
+|---|---|---|
+| Secret | `GHCR_TOKEN` | Token personal (classic) con permiso `read:packages`, para que la VM descargue las imágenes |
+| Secret | `AZURE_SSH_KEY` | Llave privada SSH con acceso a la VM (recomendado) |
+| Secret | `AZURE_VM_PASSWORD` | Solo si aún no usas llave SSH. **Debe ser secret, no variable** (las variables se ven en repos públicos) |
+| Secret (opcional) | `AZURE_VM_FINGERPRINT` | Huella SHA256 del host SSH, para no confiar a ciegas en el servidor |
+| Variable | `AZURE_VM_HOST` | IP pública o dominio de la VM |
+| Variable | `AZURE_VM_USER` | Usuario SSH (p. ej. `azureuser`) |
+| Variable (opcional) | `APP_URL` | `https://TU_DOMINIO`: al terminar, el workflow comprueba `…/api/health` desde fuera |
+
+> Pendiente conocido: la contraseña SSH estaba guardada como **variable** (`AZURE_VM_PASSWORD`). Bórrala de *Variables* y créala en *Secrets* (o usa llave SSH).
+> Opcional: *Settings → Environments → production → Required reviewers* para exigir aprobación manual antes del paso de deploy.
+
+Crear la llave SSH (en tu máquina): `ssh-keygen -t ed25519 -f ~/.ssh/mano_deploy -N ""`; la pública (`.pub`) se agrega a `~/.ssh/authorized_keys` de la VM y la privada completa va al secret `AZURE_SSH_KEY`.
+
+## 3. El `.env` del servidor (`/opt/mano-app/.env`)
+
+Plantilla: `.env.example`. **Nunca** se sube a git. Valores:
+
+| Variable | Notas |
+|---|---|
+| `GITHUB_OWNER` | `manveira` (en minúsculas) |
+| `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB` | La contraseña: `openssl rand -hex 16` |
+| `REDIS_PASSWORD` | `openssl rand -hex 16` |
+| `JWT_SECRET` | `openssl rand -hex 32` (mínimo 32 caracteres; si no, el backend **no arranca**) |
+| `APP_BASE_URL` | `https://TU_DOMINIO` (https obligatorio para el regreso desde Wompi) |
+| `DOMAIN` | `TU_DOMINIO` sin `https://` ni `www` (nginx lo usa; **nueva**, falta en los `.env` antiguos) |
+| `WOMPI_PUBLIC_KEY`, `WOMPI_PRIVATE_KEY`, `WOMPI_INTEGRITY_SECRET`, `WOMPI_EVENTS_SECRET` | **Primer despliegue: llaves de PRUEBAS** (`pub_test_…`, `prv_test_…`, `test_integrity_…`, `test_events_…`). El backend elige sandbox o producción por el prefijo de la llave pública |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Primer administrador (solo se crea si no hay ninguno). Contraseña de 12+ caracteres; quita `ADMIN_PASSWORD` del archivo tras el primer arranque |
+| `SMTP_*`, `FROM_EMAIL` | Correo de notificaciones |
+
+`MOCK_MODE=false` y `SEED_DEMO_DATA=false` los fija el compose de producción: no se configuran.
+
+**Cuentas de demostración en una base ya usada:** si el despliegue anterior sembró usuarios `@example.com` con la contraseña `password123`, deshabilítalos (la base conserva sus pedidos):
 ```bash
-# Configurar identidad git (solo la primera vez)
-git config --global user.name "Tu Nombre"
-git config --global user.email "tu@email.com"
-
-# Crear el repo en github.com:
-#   → New repository → nombre: mano_app
-#   → Privado ✓ → Sin README ✓ → Sin .gitignore ✓ → Create
-
-# Conectar y subir
-cd /Users/manve/Documents/Repos/Mano_App
-git remote add origin https://github.com/TU_USUARIO/mano_app.git
-git push -u origin main
+cd /opt/mano-app
+docker compose -f docker-compose.prod.yml exec postgres psql -U "$(grep ^POSTGRES_USER .env | cut -d= -f2)" -d mano \
+  -c "SELECT id,email,role FROM users WHERE email LIKE '%@example.com';" \
+  -c "UPDATE users SET password='!deshabilitado' WHERE email LIKE '%@example.com';"
 ```
 
----
+## 4. Primera vez en una VM nueva (solo si no existe `/opt/mano-app`)
+Ver `scripts/setup-server.sh` (instala Docker y Certbot, firewall 22/80/443, clona el repo, pide editar el `.env`, obtiene el certificado SSL y levanta la app). Antes: puertos 22/80/443 abiertos en el Network Security Group de Azure y el dominio apuntando a la IP de la VM.
 
-## Paso 2 — Configurar GitHub Actions Secrets
-
-En GitHub: **Settings → Secrets and variables → Actions → New repository secret**
-
-| Secret | Valor | Cómo obtenerlo |
-|--------|-------|----------------|
-| `AZURE_VM_HOST` | IP pública de la VM | Azure Portal → VM → Overview |
-| `AZURE_VM_USER` | `azureuser` | Por defecto en Azure Ubuntu |
-| `AZURE_SSH_KEY` | Clave privada SSH | `cat ~/.ssh/id_rsa` |
-| `GHCR_TOKEN` | GitHub Personal Access Token | github.com → Settings → Developer settings → Tokens → New token (permisos: `read:packages`, `write:packages`) |
-
-Después de configurar los secrets, cada `git push main` dispara automáticamente:
-```
-test (Go build + TypeScript) → build (Docker → GHCR) → deploy (SSH → Azure VM)
-Tiempo total: ~3-4 minutos
-```
-
----
-
-## Paso 3 — Crear la VM en Azure
-
-1. Ir a **portal.azure.com → Virtual Machines → Create**
-2. Configuración:
-   - **Image:** Ubuntu Server 22.04 LTS
-   - **Size:** B2s (4GB RAM, 2 vCPU) — ~$30/mes
-   - **Authentication:** SSH public key (usar tu clave existente)
-   - **Inbound ports:** HTTP (80), HTTPS (443), SSH (22)
-3. Anotar la **IP pública** que asigna Azure
-
----
-
-## Paso 4 — Apuntar el dominio de AWS Route 53 a Azure
-
-En **AWS Console → Route 53 → Hosted Zones → Tu dominio**:
-
-1. Crear registro tipo **A**:
-   - **Record name:** `@` (o vacío para el dominio raíz)
-   - **Value:** IP pública de la VM en Azure
-   - **TTL:** 300
-2. Crear registro tipo **A** para `www`:
-   - **Record name:** `www`
-   - **Value:** misma IP de Azure
-3. Esperar propagación DNS (~5-15 minutos)
-
-Verificar: `nslookup TU_DOMINIO.COM` debe devolver la IP de Azure.
-
----
-
-## Paso 5 — Configurar el servidor Azure
-
+## 5. Verificar después de cada despliegue
 ```bash
-# SSH a la VM
-ssh azureuser@IP_AZURE
-
-# Ejecutar el script de setup (instala Docker, Certbot, SSL, levanta la app)
-bash <(curl -s https://raw.githubusercontent.com/TU_USUARIO/mano_app/main/scripts/setup-server.sh) \
-  TU_DOMINIO.COM tu@email.com TU_USUARIO_GITHUB
+curl -fsS https://TU_DOMINIO/api/health            # {"status":"ok"}
+curl -sS -o /dev/null -w '%{http_code}\n' https://TU_DOMINIO/api/mock/status   # 403: /mock está apagado
+ssh <usuario>@<IP> 'cd /opt/mano-app && docker compose -f docker-compose.prod.yml ps && docker compose -f docker-compose.prod.yml logs --tail 30 backend'
 ```
+En los logs del backend debe verse `wompi: conciliador activo` (con llaves de Wompi) y no debe aparecer `seed de demostración` activado. Luego prueba un pago con datos de prueba (`.kiro/skills/mano-app/references/wompi-sandbox-datos-de-prueba.md` o `docs/WOMPI_SANDBOX.md`) y mira **Mis pagos** en la app (`/pagos`).
 
-El script:
-1. Instala Docker y Certbot
-2. Configura el firewall (22, 80, 443)
-3. Clona el repo en `/opt/mano-app`
-4. Te pide editar el `.env` con los valores reales
-5. Obtiene el certificado SSL de Let's Encrypt
-6. Levanta la app con `docker compose -f docker-compose.prod.yml up -d`
+## 6. Reversión y respaldos
+- El workflow guarda el SHA del último despliegue sano en `/opt/mano-app/.last_good_tag`. Si el backend no queda sano tras desplegar, **vuelve solo** a esa versión.
+- Reversión manual a una versión anterior: relanza el workflow desde ese commit, o en la VM: `cd /opt/mano-app && IMAGE_TAG=<sha> docker compose -f docker-compose.prod.yml up -d backend frontend`.
+- Respaldos de la base de datos: antes de cada despliegue en `/opt/mano-backups/*.sql.gz` (se conservan los 14 últimos). Restaurar: `gunzip -c ARCHIVO.sql.gz | docker compose -f docker-compose.prod.yml exec -T postgres psql -U USUARIO -d mano`.
 
----
+## 7. Antes de cobrar dinero real
+No cambies a llaves `pub_prod_…` hasta cerrar (ver `docs/MIGRATION_PLAN.md` F4): liberar el escrow automáticamente a las 24 h (F4.4, hoy no existe fuera del modo mock), atribución del comisionista en compras sin cuenta (F4.5), anti-fraude en el flujo real (F4.6) y atomicidad de retiros y liberaciones (F4.7). Consultar a Wompi y a un contador/abogado el modelo de cobrar en nombre de terceros (escrow y reparto).
 
-## Paso 6 — Editar el .env en el servidor
-
-```bash
-nano /opt/mano-app/.env
-```
-
-Valores mínimos que debes cambiar:
-
-```bash
-GITHUB_OWNER=tu-usuario-github
-POSTGRES_PASSWORD=$(openssl rand -hex 16)   # genera uno seguro
-REDIS_PASSWORD=$(openssl rand -hex 16)
-JWT_SECRET=$(openssl rand -hex 32)
-APP_BASE_URL=https://TU_DOMINIO.COM
-WOMPI_PUBLIC_KEY=pub_prod_...
-WOMPI_PRIVATE_KEY=prv_prod_...
-SMTP_USER=tu@gmail.com
-SMTP_PASS=tu_app_password_de_gmail
-```
-
----
-
-## Flujo de trabajo diario (después del setup)
-
-```bash
-# Hacer un cambio en el código
-git add .
-git commit -m "fix: descripción del cambio"
-git push origin main
-
-# GitHub Actions hace el resto automáticamente:
-# 1. Compila Go y verifica TypeScript
-# 2. Buildea las imágenes Docker y las sube a GHCR
-# 3. SSH a Azure, pull de las nuevas imágenes, restart
-# 4. En ~4 minutos el cambio está en producción
-```
-
----
-
-## Comandos útiles en el servidor
-
-```bash
-# Ver estado de los contenedores
-docker compose -f /opt/mano-app/docker-compose.prod.yml ps
-
-# Ver logs en tiempo real
-docker compose -f /opt/mano-app/docker-compose.prod.yml logs -f
-
-# Ver logs solo del backend
-docker compose -f /opt/mano-app/docker-compose.prod.yml logs -f backend
-
-# Reiniciar un servicio
-docker compose -f /opt/mano-app/docker-compose.prod.yml restart backend
-
-# Actualizar manualmente (sin esperar el CI)
-cd /opt/mano-app && git pull && \
-  docker compose -f docker-compose.prod.yml up -d --pull always
-```
-
----
-
-## Verificar que todo funciona en producción
-
-```bash
-# Health check
-curl https://TU_DOMINIO.COM/api/health
-
-# Debe devolver: {"status":"ok"}
-```
-
----
-
-## Archivos de infraestructura en el repo
-
-| Archivo | Para qué sirve |
-|---------|---------------|
-| `docker-compose.yml` | Desarrollo local |
-| `docker-compose.prod.yml` | Producción en Azure |
-| `nginx.conf` | Proxy local (HTTP) |
-| `nginx.prod.conf` | Proxy producción (HTTPS + Let's Encrypt) |
-| `.env.example` | Plantilla de variables de entorno |
-| `.github/workflows/deploy.yml` | CI/CD automático |
-| `scripts/setup-server.sh` | Setup del servidor desde cero |
-
----
-
-## Costos estimados (Azure + dominio AWS)
-
-| Componente | Costo/mes |
-|-----------|-----------|
-| Azure VM B2s | ~$30 |
-| Disco OS 30GB | ~$2.40 |
-| IP pública estática | ~$3.65 |
-| Dominio AWS Route 53 | ~$1 (ya lo tienes) |
-| SSL Let's Encrypt | $0 |
-| GitHub Actions | $0 (2.000 min/mes gratis) |
-| GHCR (imágenes) | $0 (500MB gratis) |
-| **Total** | **~$37/mes** |
-
-Ver análisis completo en [`docs/INFRASTRUCTURE.md`](./INFRASTRUCTURE.md).
+## 8. Problemas frecuentes
+| Síntoma | Causa | Qué hacer |
+|---|---|---|
+| El workflow falla en "Falta DOMAIN en .env" | `.env` antiguo | Añade `DOMAIN=TU_DOMINIO` (§3) |
+| `configuración insegura: JWT_SECRET…` en el log del backend | Secreto corto o por defecto | `openssl rand -hex 32` en `.env` |
+| `Permission denied (publickey)` | Llave SSH mal copiada | Revisa `AZURE_SSH_KEY` (completa, con `BEGIN/END`) y `authorized_keys` |
+| `denied` al hacer `docker pull` | `GHCR_TOKEN` sin `read:packages` o vencido | Genera otro token y actualiza el secret |
+| El backend queda `unhealthy` y revierte | Error de configuración o de BD | `docker compose logs backend` en la VM |
+| Wompi: pago aprobado pero la orden sigue pendiente | URL de eventos sin guardar o con otro dominio | Corrige la URL; el conciliador la actualiza solo en ≤ 2 min, o usa "Verificar pagos pendientes" en `/pagos` |
+| `The subscription is disabled` | Azure no ha activado la suscripción | Esperar/contactar soporte de Azure; sin eso no hay VM |

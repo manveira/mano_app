@@ -12,7 +12,7 @@ type User struct {
 	Role            string          `json:"role" gorm:"not null"`
 	Username        string          `json:"username" gorm:"uniqueIndex"`
 	DocumentID      string          `json:"document_id" gorm:"index"`
-	Phone           string          `json:"phone" gorm:"uniqueIndex"`
+	Phone           string          `json:"phone" gorm:"uniqueIndex:idx_users_phone,where:phone <> ''"` // único solo si no está vacío (hallazgo #18)
 	NequiNumber     string          `json:"nequi_number"`
 	IsVerified      bool            `json:"is_verified" gorm:"default:false"`
 	Plan            string          `json:"plan" gorm:"default:free"`
@@ -170,8 +170,24 @@ type WompiTransaction struct {
 	PaymentMethod     string    `json:"payment_method"` // CARD | NEQUI | PSE | BANCOLOMBIA_TRANSFER
 	Reference         string    `json:"reference" gorm:"uniqueIndex"`
 	RedirectURL       string    `json:"redirect_url"`
+	// Añadidos 25-nov-2026 (aditivos): lo que Wompi informó de la transacción real.
+	WompiID           string     `json:"wompi_id"`       // id de la transacción en Wompi (distinto de la referencia)
+	StatusMessage     string     `json:"status_message"` // motivo legible (p. ej. "Número no válido en Sandbox")
+	FinalizedAt       *time.Time `json:"finalized_at"`
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+// WompiEvent — bitácora de auditoría de los cambios de estado de pagos (quién los informó y cuándo).
+// No guarda datos personales del pagador (minimización): solo referencia, estado y origen.
+type WompiEvent struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Reference string    `gorm:"index" json:"reference"`
+	WompiTxID string    `json:"wompi_tx_id"`
+	Status    string    `json:"status"`
+	Source    string    `json:"source"`                       // webhook | sync | reconcile
+	Checksum  *string   `gorm:"uniqueIndex" json:"-"`         // checksum del webhook: evita reprocesar el mismo evento
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // WithdrawalRequest — solicitud de retiro de ganancias del comisionista

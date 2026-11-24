@@ -1,0 +1,248 @@
+# Modelos compartidos (espejo de backend/internal/models/models.go con sus etiquetas json).
+# REGLAS que reflejan el comportamiento real de Go/GORM:
+#  - `*T` / `*time.Time` => nullable.   `json:"-"` => ausente.   `omitempty` => puede faltar (no required).
+#  - Un struct anidado (no puntero) se serializa SIEMPRE, con valores cero si no se precargó.
+Error:
+  type: object
+  required: [error]
+  properties:
+    error: { type: string, example: invalid credentials }
+
+User:
+  type: object
+  description: Usuario. `password` nunca se serializa. Según el endpoint solo algunos campos vienen con valor (el resto en cero).
+  properties:
+    id: { type: integer, format: int64 }
+    name: { type: string }
+    email: { type: string, format: email }
+    role: { type: string, enum: [customer, business_owner, freelancer, admin] }
+    username: { type: string }
+    document_id: { type: string }
+    phone: { type: string }
+    nequi_number: { type: string }
+    is_verified: { type: boolean }
+    plan: { type: string, enum: [free, pro] }
+    plan_expires_at: { type: string, format: date-time, nullable: true }
+    earnings_balance: { type: number, description: Saldo del comisionista en COP }
+    referral_code: { type: string }
+    referred_by: { type: integer, format: int64, nullable: true }
+    businesses: { type: array, items: { $ref: '#/components/schemas/Business' }, nullable: true }
+    stories: { type: array, items: { $ref: '#/components/schemas/Story' }, nullable: true }
+    orders: { type: array, items: { $ref: '#/components/schemas/Order' }, nullable: true }
+    payment_methods: { type: array, items: { $ref: '#/components/schemas/PaymentMethod' }, nullable: true }
+
+Business:
+  type: object
+  properties:
+    id: { type: integer, format: int64 }
+    owner_id: { type: integer, format: int64 }
+    name: { type: string }
+    slug: { type: string }
+    description: { type: string }
+    category: { type: string }
+    location: { type: string }
+    address: { type: string }
+    latitude: { type: number }
+    longitude: { type: number }
+    image_url: { type: string }
+    is_featured: { type: boolean }
+    is_approved: { type: boolean }
+    default_commission_rate: { type: number, description: "Fracción 0.10–0.40" }
+    monthly_limit: { type: integer, description: "Unidades por mes; 0 = sin límite" }
+    advertisements: { type: array, items: { $ref: '#/components/schemas/Advertisement' }, nullable: true }
+    products: { type: array, items: { $ref: '#/components/schemas/Product' }, nullable: true }
+
+BusinessApplication:
+  type: object
+  properties:
+    id: { type: integer, format: int64 }
+    user_id: { type: integer, format: int64 }
+    business_name: { type: string }
+    category: { type: string }
+    description: { type: string }
+    nequi_number: { type: string }
+    document_image_url: { type: string }
+    status: { type: string, enum: [pending, approved, rejected] }
+    rejection_reason: { type: string }
+    reviewed_by: { type: integer, format: int64, nullable: true }
+    reviewed_at: { type: string, format: date-time, nullable: true }
+    created_at: { type: string, format: date-time }
+
+Product:
+  type: object
+  properties:
+    id: { type: integer, format: int64 }
+    business_id: { type: integer, format: int64 }
+    name: { type: string }
+    description: { type: string }
+    price: { type: number, description: COP }
+    stock: { type: integer }
+    image_url: { type: string }
+    commission_rate: { type: number, description: "Fracción que gana el comisionista (0.10–0.40)" }
+    is_active: { type: boolean }
+    is_exclusive: { type: boolean, description: Solo visible/afiliable con plan Pro }
+
+ReferralLink:
+  type: object
+  properties:
+    id: { type: integer, format: int64 }
+    freelancer_id: { type: integer, format: int64 }
+    freelancer: { $ref: '#/components/schemas/User' }
+    product_id: { type: integer, format: int64 }
+    product: { $ref: '#/components/schemas/Product' }
+    business_id: { type: integer, format: int64 }
+    slug: { type: string }
+    clicks: { type: integer }
+    conversions: { type: integer }
+    is_active: { type: boolean }
+    created_at: { type: string, format: date-time }
+
+Order:
+  type: object
+  description: Orden. `business`, `delivery` y los `product` de cada ítem vienen SIEMPRE (con ceros si no se precargaron).
+  properties:
+    id: { type: integer, format: int64 }
+    business_id: { type: integer, format: int64 }
+    business: { $ref: '#/components/schemas/Business' }
+    customer_id: { type: integer, format: int64, nullable: true, description: Ausente si es compra guest }
+    guest_name: { type: string }
+    guest_phone: { type: string }
+    buyer_document_id: { type: string }
+    freelancer_id: { type: integer, format: int64, nullable: true }
+    referral_link_id: { type: integer, format: int64, nullable: true }
+    total_amount: { type: number }
+    status: { type: string, enum: [pending_payment, paid, dispatched, in_transit, delivered, completed, disputed, cancelled, payment_failed] }
+    payment_status: { type: string, enum: [pending, paid, failed, refunded] }
+    escrow_status: { type: string, enum: [pending, held, released, refunded] }
+    commission: { type: number, description: Comisión de la plataforma (4%) }
+    freelancer_commission: { type: number }
+    wompi_transaction_id: { type: string }
+    confirmed_at: { type: string, format: date-time, nullable: true }
+    auto_confirm_at: { type: string, format: date-time, nullable: true }
+    items: { type: array, items: { $ref: '#/components/schemas/OrderItem' }, nullable: true }
+    commission_splits: { type: array, items: { $ref: '#/components/schemas/CommissionSplit' }, nullable: true }
+    delivery: { $ref: '#/components/schemas/Delivery' }
+    created_at: { type: string, format: date-time }
+    updated_at: { type: string, format: date-time }
+
+OrderItem:
+  type: object
+  properties:
+    id: { type: integer, format: int64 }
+    order_id: { type: integer, format: int64 }
+    product_id: { type: integer, format: int64 }
+    product: { $ref: '#/components/schemas/Product' }
+    quantity: { type: integer }
+    unit_price: { type: number }
+
+CommissionSplit:
+  type: object
+  properties:
+    id: { type: integer, format: int64 }
+    order_id: { type: integer, format: int64 }
+    recipient_type: { type: string, enum: [business, freelancer, platform] }
+    recipient_id: { type: integer, format: int64, nullable: true }
+    amount: { type: number }
+    percentage: { type: number }
+    status: { type: string, enum: [pending, released, failed] }
+    released_at: { type: string, format: date-time, nullable: true }
+
+WompiTransaction:
+  type: object
+  properties:
+    id: { type: string }
+    order_id: { type: integer, format: int64, nullable: true }
+    user_id: { type: integer, format: int64 }
+    amount: { type: integer, format: int64, description: Centavos COP }
+    currency: { type: string, example: COP }
+    status: { type: string, enum: [PENDING, APPROVED, DECLINED, VOIDED, ERROR] }
+    payment_method: { type: string }
+    reference: { type: string }
+    redirect_url: { type: string }
+    created_at: { type: string, format: date-time }
+    updated_at: { type: string, format: date-time }
+
+WithdrawalRequest:
+  type: object
+  properties:
+    id: { type: integer, format: int64 }
+    freelancer_id: { type: integer, format: int64 }
+    amount: { type: number }
+    nequi_number: { type: string }
+    status: { type: string, enum: [pending, processing, completed, failed] }
+    processed_at: { type: string, format: date-time, nullable: true }
+    notes: { type: string }
+    created_at: { type: string, format: date-time }
+
+Story:
+  type: object
+  properties:
+    id: { type: integer, format: int64 }
+    user_id: { type: integer, format: int64 }
+    title: { type: string }
+    content: { type: string }
+    media_url: { type: string }
+    expires_at: { type: string, format: date-time }
+    created_at: { type: string, format: date-time }
+
+Advertisement:
+  type: object
+  properties:
+    id: { type: integer, format: int64 }
+    business_id: { type: integer, format: int64 }
+    title: { type: string }
+    description: { type: string }
+    image_url: { type: string }
+    package_type: { type: string, example: Paquete básico }
+    active: { type: boolean }
+    expires_at: { type: string, format: date-time, nullable: true }
+    created_at: { type: string, format: date-time }
+
+AdvertisingPackage:
+  type: object
+  properties:
+    id: { type: integer, format: int64 }
+    name: { type: string }
+    description: { type: string }
+    price: { type: number }
+    duration_days: { type: integer }
+    active: { type: boolean }
+
+PaymentMethod:
+  type: object
+  properties:
+    id: { type: integer, format: int64 }
+    user_id: { type: integer, format: int64 }
+    provider: { type: string }
+    account_id: { type: string }
+    display_name: { type: string }
+    type: { type: string }
+    verified: { type: boolean }
+
+PaymentTransaction:
+  type: object
+  properties:
+    id: { type: integer, format: int64 }
+    user_id: { type: integer, format: int64 }
+    business_id: { type: integer, format: int64, nullable: true }
+    order_id: { type: integer, format: int64, nullable: true }
+    amount: { type: number }
+    currency: { type: string }
+    status: { type: string }
+    type: { type: string, example: package_purchase }
+    reference: { type: string }
+    stripe_payment_intent_id: { type: string }
+    created_at: { type: string, format: date-time }
+
+Delivery:
+  type: object
+  properties:
+    id: { type: integer, format: int64 }
+    order_id: { type: integer, format: int64 }
+    courier_id: { type: integer, format: int64, nullable: true }
+    type: { type: string, enum: [business_own, mano_courier] }
+    status: { type: string, enum: [scheduled, picked_up, in_transit, delivered, failed] }
+    eta: { type: string }
+    tracking: { type: string }
+    picked_up_at: { type: string, format: date-time, nullable: true }
+    delivered_at: { type: string, format: date-time, nullable: true }

@@ -40,6 +40,10 @@ export default function Checkout() {
     if (res.ok) {
       const data = await res.json()
       setWompiData(data)
+      // Ir directo al checkout de Wompi; el enlace de abajo queda como respaldo si el navegador lo bloquea.
+      if (typeof data.checkout_url === 'string' && data.checkout_url.startsWith('https://checkout.wompi.co/')) {
+        window.location.assign(data.checkout_url)
+      }
     } else {
       const data = await res.json().catch(() => ({}))
       setError(data.error || 'Error al iniciar pago')

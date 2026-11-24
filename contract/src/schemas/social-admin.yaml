@@ -1,0 +1,225 @@
+# Schemas propios del dominio Social / Publicidad / Mapa / Admin.
+# Reflejan las respuestas REALES del backend (verificadas contra http://localhost:8080/api).
+# Nota sobre listas: las que salen de `db.Find(&slice)` llegan como `[]` aunque no haya filas; solo las construidas con
+# `append` sobre un slice nil (p. ej. GET /map/nearby con coordenadas y sin coincidencias) llegan como `null`.
+
+# ─── Social ───────────────────────────────────────────────────────────────────
+FeedResponse:
+  type: object
+  description: Feed público. Historias vigentes + anuncios activos ordenados por prioridad de paquete.
+  required: [stories, advertisements]
+  properties:
+    stories:
+      type: array
+      description: Historias con `expires_at > now` (o NULL), de la más reciente a la más antigua (`created_at DESC`).
+      items: { $ref: '#/components/schemas/Story' }
+    advertisements:
+      type: array
+      description: |
+        Anuncios con `active = true`. Orden: "Paquete destacado" → "Paquete premium" → "Paquete básico" → cualquier otro
+        `package_type`. Dentro de una misma prioridad el orden NO está garantizado como estable (se ordena en memoria con
+        un intercambio simple; de partida vienen por `created_at DESC`).
+      items: { $ref: '#/components/schemas/Advertisement' }
+
+StoriesResponse:
+  type: object
+  required: [stories]
+  properties:
+    stories:
+      type: array
+      items: { $ref: '#/components/schemas/Story' }
+
+CreateStoryRequest:
+  type: object
+  required: [title, content]
+  properties:
+    title: { type: string, minLength: 1, example: Historia contrato social 1 }
+    content: { type: string, minLength: 1, example: Contenido único }
+    media_url: { type: string, example: 'https://example.com/a.jpg' }
+  description: |
+    `expires_at` y `user_id` NO se aceptan del cliente: `user_id` sale del JWT y `expires_at` nunca se asigna.
+    Cualquier propiedad adicional se ignora.
+
+# ─── Publicidad ───────────────────────────────────────────────────────────────
+AdvertisementsResponse:
+  type: object
+  required: [advertisements]
+  properties:
+    advertisements:
+      type: array
+      items: { $ref: '#/components/schemas/Advertisement' }
+
+PackagesResponse:
+  type: object
+  required: [packages]
+  properties:
+    packages:
+      type: array
+      items: { $ref: '#/components/schemas/AdvertisingPackage' }
+
+CreateAdvertisementRequest:
+  type: object
+  required: [business_id, title, description, package_type]
+  properties:
+    business_id: { type: integer, format: int64, minimum: 1, description: Negocio propio del usuario autenticado. }
+    title: { type: string, minLength: 1 }
+    description: { type: string, minLength: 1 }
+    image_url: { type: string }
+    package_type:
+      type: string
+      minLength: 1
+      description: |
+        Texto libre (no se valida contra `AdvertisingPackage`). Solo los valores exactos "Paquete destacado",
+        "Paquete premium" y "Paquete básico" reciben prioridad en `GET /feed`.
+      example: Paquete premium
+    active:
+      type: boolean
+      default: false
+      description: Si se omite queda en `false` y el anuncio no aparece en `/ads`, `/feed` ni `/recommendations`.
+
+PurchasePackageRequest:
+  type: object
+  required: [business_id, package_id]
+  properties:
+    business_id: { type: integer, format: int64, minimum: 1, description: Negocio propio del usuario autenticado. }
+    package_id: { type: integer, format: int64, minimum: 1, description: ID de `AdvertisingPackage`. }
+
+PurchasePackageResponse:
+  type: object
+  required: [transaction, advertisement]
+  properties:
+    transaction: { $ref: '#/components/schemas/PaymentTransaction' }
+    advertisement: { $ref: '#/components/schemas/Advertisement' }
+
+# ─── Mapa / recomendaciones ───────────────────────────────────────────────────
+NearbyBusinessesResponse:
+  type: object
+  required: [businesses]
+  properties:
+    businesses:
+      type: array
+      nullable: true
+      description: |
+        Negocios (aprobados o no). Sin `latitude`+`longitude`: todos los negocios (`[]` si no hay ninguno).
+        Con coordenadas: los que están dentro de `radius_km`; si ninguno coincide llega `null` (no `[]`).
+      items: { $ref: '#/components/schemas/Business' }
+
+RecommendationsResponse:
+  type: object
+  required: [recommendations]
+  properties:
+    recommendations:
+      type: object
+      required: [advertisements, local_businesses]
+      properties:
+        advertisements:
+          type: array
+          description: Todos los anuncios activos, sin ordenar por paquete ni limitar.
+          items: { $ref: '#/components/schemas/Advertisement' }
+        local_businesses:
+          type: array
+          description: |
+            Los primeros 20 negocios de la tabla (sin ORDER BY, sin filtrar `is_approved`). Si llegan `latitude` y
+            `longitude` numéricas se conservan solo los que están a ≤ 10 km y con coordenadas distintas de (0,0);
+            si ninguno cumple llega `[]`.
+          items: { $ref: '#/components/schemas/Business' }
+
+# ─── Admin ────────────────────────────────────────────────────────────────────
+AdminPendingBusinessesResponse:
+  type: object
+  required: [businesses, count]
+  properties:
+    businesses:
+      type: array
+      items: { $ref: '#/components/schemas/Business' }
+    count: { type: integer, minimum: 0 }
+
+AdminApplicationsResponse:
+  type: object
+  required: [applications, count]
+  properties:
+    applications:
+      type: array
+      description: Solicitudes con `status = pending`, de la más antigua a la más reciente.
+      items: { $ref: '#/components/schemas/BusinessApplication' }
+    count: { type: integer, minimum: 0 }
+
+AdminApproveBusinessResponse:
+  type: object
+  required: [message, business_id]
+  properties:
+    message: { type: string, example: business approved }
+    business_id: { type: integer, format: int64 }
+
+AdminRejectBusinessRequest:
+  type: object
+  description: Cuerpo opcional. Un JSON mal formado o ausente se ignora silenciosamente (`reason` queda vacío).
+  properties:
+    reason: { type: string, example: Documentos ilegibles }
+
+AdminRejectBusinessResponse:
+  type: object
+  required: [message, business_id, reason]
+  properties:
+    message: { type: string, example: business rejected }
+    business_id: { type: integer, format: int64 }
+    reason:
+      type: string
+      description: Eco del `reason` recibido (cadena vacía si no se envió). NO se persiste en ningún lado.
+
+AdminDisputesResponse:
+  type: object
+  required: [disputes, count]
+  properties:
+    disputes:
+      type: array
+      description: |
+        Órdenes con `status = disputed`, de la más reciente a la más antigua. Cada `items[].product` viene precargado;
+        `business` y `delivery` llegan siempre con valores cero (`id: 0`); `customer_id`, `freelancer_id`,
+        `referral_link_id`, `items` y `commission_splits` pueden faltar (omitempty).
+      items: { $ref: '#/components/schemas/Order' }
+    count: { type: integer, minimum: 0 }
+
+ResolveDisputeRequest:
+  type: object
+  required: [resolution]
+  properties:
+    resolution:
+      type: string
+      enum: [refund_buyer, release_business]
+      description: |
+        - `refund_buyer`: orden `cancelled`, escrow `refunded`, pago `refunded`; los splits `pending` pasan a `failed`.
+        - `release_business`: orden `delivered`, escrow `released`; se liberan los splits (escrow normal).
+    notes:
+      type: string
+      description: Se acepta pero NO se guarda ni se devuelve.
+
+ResolveDisputeResponse:
+  type: object
+  required: [message, status, escrow_status]
+  properties:
+    message:
+      type: string
+      description: '"Dispute resolved" (refund_buyer) o "Dispute resolved: payment released to business" (release_business).'
+    status: { type: string, enum: [cancelled, delivered] }
+    escrow_status: { type: string, enum: [refunded, released] }
+    payment_status:
+      type: string
+      description: Solo presente con `refund_buyer` (`refunded`). Con `release_business` la propiedad no existe.
+
+AdminWithdrawalsResponse:
+  type: object
+  required: [withdrawals, count]
+  properties:
+    withdrawals:
+      type: array
+      description: Retiros con `status = pending`, del más antiguo al más reciente.
+      items: { $ref: '#/components/schemas/WithdrawalRequest' }
+    count: { type: integer, minimum: 0 }
+
+AdminProcessWithdrawalResponse:
+  type: object
+  required: [message, id]
+  properties:
+    message: { type: string, example: withdrawal processed }
+    id: { type: integer, format: int64 }

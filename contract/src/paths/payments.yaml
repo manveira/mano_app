@@ -1,0 +1,82 @@
+# Añadido 25-nov-2026 (aditivo). Todas las respuestas llevan `Cache-Control: no-store` (datos financieros).
+/payments:
+  get:
+    tags: [Pagos]
+    operationId: listMyPayments
+    summary: Mis pagos (historial de Wompi mapeado a pedidos)
+    description: |
+      `scope=mine` (por defecto): pagos que hizo el usuario como comprador. `scope=received`: solo `business_owner`; pagos de
+      pedidos de sus negocios, **sin datos personales del pagador**. Otro rol con `scope=received` → 403.
+      Orden: más reciente primero. `limit` 1–100 (50 por defecto), `offset` ≥ 0.
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: scope, in: query, schema: { type: string, enum: [mine, received] } }
+      - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+      - { name: offset, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+    responses:
+      '200':
+        description: Pagos visibles para el usuario.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PaymentsResponse' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+
+/payments/{reference}:
+  get:
+    tags: [Pagos]
+    operationId: getMyPayment
+    summary: Detalle de un pago y su línea de tiempo
+    description: |
+      La referencia debe cumplir `[A-Za-z0-9_-]{1,64}` (si no, 400). Si el pago no existe **o no es del usuario** responde 404
+      (no se revela su existencia). Acepta `scope=received` igual que `/payments`.
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - { name: reference, in: path, required: true, schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,64}$' } }
+      - { name: scope, in: query, schema: { type: string, enum: [mine, received] } }
+    responses:
+      '200':
+        description: Pago y cambios de estado.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PaymentDetailResponse' }
+      '400': { $ref: '#/components/responses/BadRequest' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+
+/payments/wompi/sync:
+  post:
+    tags: [Pagos]
+    operationId: syncWompiPayment
+    summary: Verificar con Wompi los pagos pendientes de una orden
+    description: |
+      Se llama al volver del checkout. El **servidor** consulta a Wompi (llave privada) y aplica el resultado; el cliente nunca
+      decide el estado. Solo el comprador de la orden (otro usuario → 403). Máximo una consulta por orden cada 5 s (429).
+      503 si el servidor no tiene verificación configurada o Wompi no responde.
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SyncPaymentRequest' }
+    responses:
+      '200':
+        description: Estado actual de la orden y de sus pagos.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SyncPaymentResponse' }
+      '400': { $ref: '#/components/responses/BadRequest' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403': { $ref: '#/components/responses/Forbidden' }
+      '404': { $ref: '#/components/responses/NotFound' }
+      '429':
+        description: Demasiadas verificaciones seguidas de la misma orden.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+      '503':
+        description: Verificación no configurada o Wompi no disponible.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }

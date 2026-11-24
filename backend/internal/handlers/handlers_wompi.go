@@ -1,14 +1,19 @@
 package handlers
 
 import (
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log"
+	"math"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -81,15 +86,27 @@ func (h *Handler) InitiateWompiPayment(c *gin.Context) {
 	h.generateWompiCheckout(c, &order, claims.UserID)
 }
 
-func (h *Handler) generateWompiCheckout(c *gin.Context, order *models.Order, userID uint) {
-	reference := fmt.Sprintf("MANO-%d-%d", order.ID, time.Now().Unix())
-	amountCents := int64(order.TotalAmount * 100)
+// wompiIntegritySignature calcula la firma de integridad del checkout de Wompi:
+// SHA256 simple (NO HMAC) de "<referencia><monto en centavos><moneda><secreto de integridad>".
+// Doc: https://docs.wompi.co/docs/colombia/widget-checkout-web/ (paso 3).
+func wompiIntegritySignature(reference string, amountCents int64, currency, integritySecret string) string {
+	sum := sha256.Sum256([]byte(fmt.Sprintf("%s%d%s%s", reference, amountCents, currency, integritySecret)))
+	return hex.EncodeToString(sum[:])
+}
 
+func (h *Handler) generateWompiCheckout(c *gin.Context, order *models.Order, userID uint) {
 	integritySecret := os.Getenv("WOMPI_INTEGRITY_SECRET")
-	sigData := fmt.Sprintf("%s%dCOP%s", reference, amountCents, integritySecret)
-	h256 := hmac.New(sha256.New, []byte(integritySecret))
-	h256.Write([]byte(sigData))
-	signature := hex.EncodeToString(h256.Sum(nil))
+	publicKey := os.Getenv("WOMPI_PUBLIC_KEY")
+	// Fuera de MOCK_MODE las claves de Wompi son obligatorias (sandbox: pub_test_ / producción: pub_prod_).
+	if !h.mockMode && (integritySecret == "" || publicKey == "") {
+		log.Printf("wompi: faltan WOMPI_PUBLIC_KEY / WOMPI_INTEGRITY_SECRET; no se puede iniciar el pago de la orden %d", order.ID)
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "payment gateway not configured"})
+		return
+	}
+
+	reference := fmt.Sprintf("MANO-%d-%d", order.ID, time.Now().Unix())
+	amountCents := int64(math.Round(order.TotalAmount * 100))
+	signature := wompiIntegritySignature(reference, amountCents, "COP", integritySecret)
 
 	redirectURL := os.Getenv("APP_BASE_URL") + "/orders"
 
@@ -104,7 +121,14 @@ func (h *Handler) generateWompiCheckout(c *gin.Context, order *models.Order, use
 	}
 	h.db.Model(order).Update("wompi_transaction_id", reference)
 
-	publicKey := os.Getenv("WOMPI_PUBLIC_KEY")
+	// Sandbox y producción usan la misma URL del checkout; las llaves (pub_test_ / pub_prod_) deciden el ambiente.
+	q := url.Values{}
+	q.Set("public-key", publicKey)
+	q.Set("currency", "COP")
+	q.Set("amount-in-cents", strconv.FormatInt(amountCents, 10))
+	q.Set("reference", reference)
+	q.Set("signature:integrity", signature)
+	q.Set("redirect-url", redirectURL)
 	c.JSON(http.StatusOK, gin.H{
 		"reference":    reference,
 		"amount":       amountCents,
@@ -112,10 +136,7 @@ func (h *Handler) generateWompiCheckout(c *gin.Context, order *models.Order, use
 		"signature":    signature,
 		"public_key":   publicKey,
 		"redirect_url": redirectURL,
-		"checkout_url": fmt.Sprintf(
-			"https://checkout.wompi.co/p/?public-key=%s&currency=COP&amount-in-cents=%d&reference=%s&signature:integrity=%s&redirect-url=%s",
-			publicKey, amountCents, reference, signature, redirectURL,
-		),
+		"checkout_url": "https://checkout.wompi.co/p/?" + q.Encode(),
 	})
 }
 
@@ -125,11 +146,13 @@ type wompiWebhookPayload struct {
 	Event string `json:"event"`
 	Data  struct {
 		Transaction struct {
-			ID             string `json:"id"`
-			Reference      string `json:"reference"`
-			Status         string `json:"status"`
-			AmountInCents  int64  `json:"amount_in_cents"`
-			PaymentMethod  struct {
+			ID                string `json:"id"`
+			Reference         string `json:"reference"`
+			Status            string `json:"status"`
+			Currency          string `json:"currency"`
+			AmountInCents     int64  `json:"amount_in_cents"`
+			PaymentMethodType string `json:"payment_method_type"`
+			PaymentMethod     struct {
 				Type string `json:"type"`
 			} `json:"payment_method"`
 		} `json:"transaction"`
@@ -138,11 +161,12 @@ type wompiWebhookPayload struct {
 		Properties []string `json:"properties"`
 		Checksum   string   `json:"checksum"`
 	} `json:"signature"`
+	Timestamp json.Number `json:"timestamp"`
 }
 
 // WompiWebhook procesa eventos de Wompi (pago aprobado, rechazado, etc.)
 func (h *Handler) WompiWebhook(c *gin.Context) {
-	body, err := io.ReadAll(c.Request.Body)
+	body, err := io.ReadAll(io.LimitReader(c.Request.Body, 1<<20))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "cannot read body"})
 		return
@@ -154,91 +178,93 @@ func (h *Handler) WompiWebhook(c *gin.Context) {
 		return
 	}
 
-	// Verificar firma del evento
+	// Verificar firma del evento. Fuera de MOCK_MODE el secreto es obligatorio:
+	// sin él cualquiera podría marcar órdenes como pagadas.
 	eventsSecret := os.Getenv("WOMPI_EVENTS_SECRET")
-	if eventsSecret != "" {
-		if !verifyWompiSignature(payload, eventsSecret) {
+	switch {
+	case eventsSecret != "":
+		if !verifyWompiEvent(body, payload, c.GetHeader("X-Event-Checksum"), eventsSecret) {
+			log.Printf("wompi: webhook con firma inválida (evento %q, referencia %q)", payload.Event, payload.Data.Transaction.Reference)
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid signature"})
 			return
 		}
+	case !h.mockMode:
+		log.Printf("wompi: webhook rechazado, falta WOMPI_EVENTS_SECRET")
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "webhook not configured"})
+		return
+	}
+
+	// Solo nos interesa transaction.updated. Los demás eventos se reconocen con 200 sin hacer nada.
+	if payload.Event != "transaction.updated" {
+		c.Status(http.StatusOK)
+		return
+	}
+
+	// Replay / reintento: el mismo evento firmado (mismo checksum) ya se procesó.
+	checksum := strings.TrimSpace(payload.Signature.Checksum)
+	if checksum == "" {
+		checksum = strings.TrimSpace(c.GetHeader("X-Event-Checksum"))
+	}
+	if h.wompiEventSeen(checksum) {
+		c.Status(http.StatusOK)
+		return
 	}
 
 	tx := payload.Data.Transaction
-	switch payload.Event {
-	case "transaction.updated":
-		switch tx.Status {
-		case "APPROVED":
-			if err := h.handleWompiApproved(tx.Reference, tx.ID, tx.PaymentMethod.Type); err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	method := tx.PaymentMethodType
+	if method == "" {
+		method = tx.PaymentMethod.Type
+	}
+	data := wompiTxData{
+		ID: tx.ID, Reference: tx.Reference, Status: tx.Status, Currency: tx.Currency,
+		PaymentMethod: method, AmountInCents: tx.AmountInCents,
+	}
+
+	// Defensa en profundidad: un APPROVED solo cuenta si Wompi lo confirma por su API (llave privada, TLS).
+	// Sin llave privada (solo desarrollo/mock) se confía en el evento firmado.
+	if data.Status == "APPROVED" {
+		if client := newWompiClient(); client != nil {
+			confirmed, err := confirmWompiApproval(client, data)
+			if errors.Is(err, errWompiUnavailable) {
+				log.Printf("wompi: no se pudo confirmar %s con Wompi (se reintentará): %v", data.Reference, err)
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "could not verify payment, retry later"})
 				return
 			}
-		case "DECLINED", "VOIDED", "ERROR":
-			h.handleWompiDeclined(tx.Reference, tx.Status)
+			if err != nil {
+				log.Printf("wompi: error confirmando %s: %v", data.Reference, err)
+				c.JSON(http.StatusBadGateway, gin.H{"error": "could not verify payment"})
+				return
+			}
+			if confirmed == nil {
+				log.Printf("wompi: APPROVED de %s no confirmado por la API de Wompi; se ignora", data.Reference)
+				c.Status(http.StatusOK)
+				return
+			}
+			data = *confirmed
 		}
 	}
 
-	c.Status(http.StatusOK)
-}
-
-func (h *Handler) handleWompiApproved(reference, wompiID, paymentMethod string) error {
-	// Actualizar WompiTransaction
-	var wompiTx models.WompiTransaction
-	if err := h.db.Where("reference = ?", reference).First(&wompiTx).Error; err != nil {
-		return err
-	}
-	wompiTx.ID = wompiID
-	wompiTx.Status = "APPROVED"
-	wompiTx.PaymentMethod = paymentMethod
-	h.db.Save(&wompiTx)
-
-	if wompiTx.OrderID == nil {
-		return nil
-	}
-
-	// Actualizar orden
-	var order models.Order
-	if err := h.db.First(&order, *wompiTx.OrderID).Error; err != nil {
-		return err
-	}
-
-	order.PaymentStatus = "paid"
-	order.Status = "paid"
-	order.EscrowStatus = "held"
-	order.WompiTransactionID = wompiID
-
-	// Calcular auto-confirm: 24h desde ahora
-	autoConfirm := time.Now().Add(24 * time.Hour)
-	order.AutoConfirmAt = &autoConfirm
-
-	if err := h.db.Save(&order).Error; err != nil {
-		return err
-	}
-
-	// Crear CommissionSplits
-	return h.createCommissionSplits(&order)
-}
-
-func (h *Handler) handleWompiDeclined(reference, status string) {
-	var wompiTx models.WompiTransaction
-	if h.db.Where("reference = ?", reference).First(&wompiTx).Error != nil {
+	if _, err := h.applyWompiTransaction(data, "webhook", checksum); err != nil {
+		if errors.Is(err, errWompiIgnored) {
+			log.Printf("wompi: evento ignorado (%v) referencia=%s", err, data.Reference)
+			c.Status(http.StatusOK)
+			return
+		}
+		log.Printf("wompi: error procesando %s referencia=%s: %v", data.Status, data.Reference, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to process event"})
 		return
 	}
-	wompiTx.Status = status
-	h.db.Save(&wompiTx)
-
-	if wompiTx.OrderID != nil {
-		h.db.Model(&models.Order{}).Where("id = ?", *wompiTx.OrderID).
-			Updates(map[string]interface{}{
-				"payment_status": "failed",
-				"status":         "payment_failed",
-			})
-	}
+	c.Status(http.StatusOK)
 }
 
 // createCommissionSplits calcula y registra cómo se distribuye el dinero de una orden.
 func (h *Handler) createCommissionSplits(order *models.Order) error {
+	return createCommissionSplitsTx(h.db, order)
+}
+
+func createCommissionSplitsTx(db *gorm.DB, order *models.Order) error {
 	// Eliminar splits previos si existen (idempotente)
-	h.db.Where("order_id = ?", order.ID).Delete(&models.CommissionSplit{})
+	db.Where("order_id = ?", order.ID).Delete(&models.CommissionSplit{})
 
 	total := order.TotalAmount
 	platformAmount := total * platformCommissionRate
@@ -276,7 +302,7 @@ func (h *Handler) createCommissionSplits(order *models.Order) error {
 	}
 
 	for _, s := range splits {
-		if err := h.db.Create(&s).Error; err != nil {
+		if err := db.Create(&s).Error; err != nil {
 			return err
 		}
 	}
@@ -374,37 +400,70 @@ func (h *Handler) releaseEscrow(order *models.Order) error {
 	return nil
 }
 
-// verifyWompiSignature verifica la firma HMAC-SHA256 del evento de Wompi.
-// Wompi firma: SHA256(prop1_value + prop2_value + ... + timestamp + events_secret)
-// Las propiedades a concatenar vienen en payload.Signature.Properties.
-func verifyWompiSignature(payload wompiWebhookPayload, secret string) bool {
-	if payload.Signature.Checksum == "" {
+// verifyWompiEvent valida el checksum de un evento de Wompi.
+// checksum = SHA256( valores de signature.properties (en ese orden) + timestamp + secreto de eventos ).
+// El checksum llega en signature.checksum y en el header X-Event-Checksum.
+// Doc: https://docs.wompi.co/docs/colombia/eventos/ (Security).
+func verifyWompiEvent(body []byte, payload wompiWebhookPayload, headerChecksum, secret string) bool {
+	received := strings.TrimSpace(payload.Signature.Checksum)
+	if received == "" {
+		received = strings.TrimSpace(headerChecksum)
+	}
+	if received == "" || len(payload.Signature.Properties) == 0 || payload.Timestamp.String() == "" {
 		return false
 	}
 
-	// Extraer valores de las propiedades indicadas por Wompi
-	// Formato: "transaction.id", "transaction.status", "transaction.amount_in_cents", etc.
-	tx := payload.Data.Transaction
-	propValues := map[string]string{
-		"transaction.id":              tx.ID,
-		"transaction.status":          tx.Status,
-		"transaction.amount_in_cents": strconv.FormatInt(tx.AmountInCents, 10),
-		"transaction.reference":       tx.Reference,
+	// Se relee `data` como mapa genérico: las propiedades que firma Wompi pueden variar por evento.
+	var raw struct {
+		Data map[string]interface{} `json:"data"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	if err := dec.Decode(&raw); err != nil {
+		return false
 	}
 
 	var concat strings.Builder
 	for _, prop := range payload.Signature.Properties {
-		if val, ok := propValues[prop]; ok {
-			concat.WriteString(val)
+		val, ok := lookupWompiProperty(raw.Data, prop)
+		if !ok {
+			return false
 		}
+		concat.WriteString(val)
 	}
+	concat.WriteString(payload.Timestamp.String())
 	concat.WriteString(secret)
 
-	h := sha256.New()
-	h.Write([]byte(concat.String()))
-	expected := hex.EncodeToString(h.Sum(nil))
+	sum := sha256.Sum256([]byte(concat.String()))
+	expected := hex.EncodeToString(sum[:])
+	return hmac.Equal([]byte(expected), []byte(strings.ToLower(received)))
+}
 
-	return hmac.Equal([]byte(expected), []byte(payload.Signature.Checksum))
+// lookupWompiProperty resuelve rutas como "transaction.amount_in_cents" dentro de `data`.
+func lookupWompiProperty(data map[string]interface{}, path string) (string, bool) {
+	var cur interface{} = data
+	for _, key := range strings.Split(path, ".") {
+		m, ok := cur.(map[string]interface{})
+		if !ok {
+			return "", false
+		}
+		cur, ok = m[key]
+		if !ok {
+			return "", false
+		}
+	}
+	switch v := cur.(type) {
+	case string:
+		return v, true
+	case json.Number:
+		return v.String(), true
+	case bool:
+		return strconv.FormatBool(v), true
+	case nil:
+		return "", true
+	default:
+		return "", false
+	}
 }
 
 // ─── Referidos ────────────────────────────────────────────────────────────────
@@ -671,6 +730,7 @@ func (h *Handler) FreelancerStorefront(c *gin.Context) {
 
 	type productEntry struct {
 		ID             uint    `json:"id"`
+		BusinessID     uint    `json:"business_id"`
 		Name           string  `json:"name"`
 		Description    string  `json:"description"`
 		Price          float64 `json:"price"`
@@ -687,6 +747,7 @@ func (h *Handler) FreelancerStorefront(c *gin.Context) {
 		}
 		products = append(products, productEntry{
 			ID:             l.Product.ID,
+			BusinessID:     l.Product.BusinessID,
 			Name:           l.Product.Name,
 			Description:    l.Product.Description,
 			Price:          l.Product.Price,

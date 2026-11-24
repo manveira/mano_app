@@ -81,7 +81,7 @@ export default function CreateBusiness() {
               <label className="block text-sm text-gray-700 mb-1">Categoría *</label>
               <select className="w-full border rounded px-2 py-1.5" value={form.category} onChange={set('category')} required disabled={loading}>
                 <option value="">Seleccionar</option>
-                {['Café', 'Restaurante', 'Artesanías', 'Ropa', 'Hotel', 'Turismo', 'Servicios', 'Otro'].map(c => (
+                {['Moda', 'Alimentos', 'Hogar', 'Café', 'Restaurante', 'Artesanías', 'Ropa', 'Hotel', 'Turismo', 'Servicios', 'Otro'].map(c => (
                   <option key={c} value={c}>{c}</option>
                 ))}
               </select>
