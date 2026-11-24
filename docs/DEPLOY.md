@@ -80,6 +80,7 @@ docker compose -f docker-compose.prod.yml exec postgres psql -U "$(grep ^POSTGRE
 Ver `scripts/setup-server.sh` (instala Docker y Certbot, firewall 22/80/443, clona el repo, pide editar el `.env`, obtiene el certificado SSL y levanta la app). Antes: puertos 22/80/443 abiertos en el Network Security Group de Azure y el dominio apuntando a la IP de la VM.
 
 ## 5. Verificar después de cada despliegue
+El workflow ya lo hace al final ("Chequeo externo"): exige `GET /api/health` = 200 y `GET /api/payments` = 401 (esa ruta solo existe en la versión nueva). Si el sitio sigue sirviendo la versión vieja, el run termina en **rojo** aunque el paso SSH haya salido bien. A mano:
 ```bash
 curl -fsS https://TU_DOMINIO/api/health            # {"status":"ok"}
 curl -sS -o /dev/null -w '%{http_code}\n' https://TU_DOMINIO/api/mock/status   # 403: /mock está apagado

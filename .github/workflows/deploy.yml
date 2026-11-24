@@ -137,7 +137,10 @@ jobs:
           fingerprint: ${{ secrets.AZURE_VM_FINGERPRINT }}
           envs: GHCR_TOKEN,GHCR_USER,DEPLOY_SHA,VM_HOST
           script: |
-            bash -s <<'REMOTE'
+            # El script se guarda en un archivo y se ejecuta con la entrada cerrada (< /dev/null). Con "bash -s <<EOF",
+            # un comando que lea stdin (docker compose exec) se come el resto del script y el paso termina "bien" sin terminar.
+            SCRIPT_FILE=$(mktemp /tmp/mano-deploy.XXXXXX)
+            cat > "$SCRIPT_FILE" <<'REMOTE'
             set -euo pipefail
             cd /opt/mano-app
             COMPOSE="docker compose -f docker-compose.prod.yml"
@@ -226,13 +229,24 @@ jobs:
             echo "✅ Deploy completado — commit ${DEPLOY_SHA}"
             [ -n "${NGINX_CONF:-}" ] && echo "🌐 Abre: ${APP_BASE_URL}" || true
             REMOTE
+            bash "$SCRIPT_FILE" < /dev/null
+            RC=$?
+            rm -f "$SCRIPT_FILE"
+            exit $RC
 
-      - name: Chequeo externo (si APP_URL está definida)
-        if: ${{ vars.APP_URL != '' }}
+      - name: Chequeo externo (la versión nueva está en línea)
+        env:
+          APP_URL: ${{ vars.APP_URL }}
+          VM_HOST: ${{ secrets.AZURE_VM_HOST || vars.AZURE_VM_HOST }}
         run: |
+          BASE="${APP_URL:-http://${VM_HOST}}"
+          echo "Comprobando ${BASE}"
           for i in $(seq 1 12); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' "${{ vars.APP_URL }}/api/health" || true)
-            [ "$code" = 200 ] && { echo "✅ ${{ vars.APP_URL }}/api/health → 200"; exit 0; }
-            sleep 5
+            h=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/health" || true)
+            # /api/payments existe solo en la versión nueva: sin sesión debe responder 401 (la vieja daría 404)
+            n=$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/api/payments" || true)
+            if [ "$h" = 200 ] && [ "$n" = 401 ]; then echo "✅ ${BASE}: health 200 y versión nueva activa (/api/payments 401)"; exit 0; fi
+            echo "   intento $i: health=$h payments=$n"; sleep 5
           done
-          echo "::error::${{ vars.APP_URL }}/api/health no respondió 200 (último código: $code)"; exit 1
+          echo "::error::${BASE} no muestra la versión nueva (health=$h, /api/payments=$n). El despliegue no quedó activo."
+          exit 1
