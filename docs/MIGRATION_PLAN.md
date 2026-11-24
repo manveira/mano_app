@@ -66,10 +66,11 @@ F0 ─▶ F1 ─▶ F2 ─▶ F3 ───────────┐
 
 **Objetivo:** poder trabajar seguro y repetible antes de cambiar nada.
 
-### F0.1 — Confirmar el repositorio git real ⬜ 👤
+### F0.1 — Confirmar el repositorio git real 🟡 👤
 - La copia analizada **no tiene `.git`**. Ubicar el repo real (el que está en GitHub) y trabajar ahí.
 - Entregable: rama `refactor/multifront` y tag `baseline-pre-refactor` sobre el estado actual.
 - Verificación: `git status` limpio · `git tag -l baseline-pre-refactor` · `git branch --show-current`.
+- **Hecho (24-nov-2026):** el repo es `github.com/manveira/mano_app`; la carpeta de trabajo no es un repo git, así que se versiona con `scripts/github-sync.sh` (clon en `~/mano-push`) hacia la rama `refactor/multifront` y el PR #1. **Falta:** el tag `baseline-pre-refactor` sobre el `main` anterior (`5ddd98d`) 👤.
 
 ### F0.2 — Guardrails de imágenes ✅ 🤖
 - Entregado: `.kiro/steering/design-assets-immutable.md`, hook `.kiro/hooks/protect-design-assets.json` + `.kiro/scripts/guard-design-assets.sh`, `mano_app/design-assets/` (README + `MANIFEST.sha256` con las 7 imágenes actuales), `scripts/verify-design-assets.sh` y `scripts/register-design-assets.sh`.
@@ -99,13 +100,13 @@ F0 ─▶ F1 ─▶ F2 ─▶ F3 ───────────┐
 - **Advertencia:** verde ≠ listo. Los flujos de dinero usan `/mock/*`, que evita el código real de Wompi; los hallazgos #1–#4 se prueban en F4/G4, no aquí.
 - Hallazgos nuevos: #18 (registro sin teléfono), #19 (stories sin `expires_at`), #20 (`/map/nearby` sin filtrar aprobados), #21 (`null` en vez de `[]`).
 
-### F0.7 — CI mínimo en PR 🟡 🤖
+### F0.7 — CI mínimo en PR ✅ 🤖
 - Workflow `ci.yml` (en `pull_request`): `go vet ./...`, `go build ./...`, `go test ./...` (cuando existan), `tsc --noEmit`, `scripts/verify-design-assets.sh`, `docker compose config`.
 - Verificación: abrir un PR de prueba y ver verde.
 - **Hecho:** `.github/workflows/ci.yml` con 5 jobs (backend, web, design-assets, compose, api-tests); YAML validado y `docker compose config` probado en local. **Pendiente 👤:** confirmar que corre en verde en GitHub (requiere el repo real, F0.1). No despliega nada.
 
 ### Gate G0 👤
-- [x] `verify-design-assets.sh` OK · [x] `local-up.sh` levanta (web + backend + Postgres) · [x] `smoke.sh` 5/5 · [x] `BASELINE_RESULTS.md` existe · [x] `deploy.yml` solo manual · [ ] CI verde en GitHub (F0.7) · [ ] tag `baseline-pre-refactor` (F0.1, 👤).
+- [x] `verify-design-assets.sh` OK · [x] `local-up.sh` levanta (web + backend + Postgres) · [x] `smoke.sh` 5/5 · [x] `BASELINE_RESULTS.md` existe · [x] `deploy.yml` solo manual · [x] CI verde en GitHub (F0.7: PR #1, 5 trabajos en verde en 2 ejecuciones, 24-nov-2026) · [ ] tag `baseline-pre-refactor` (F0.1, 👤).
 
 ---
 
@@ -373,11 +374,11 @@ Marca el estado de cada tarea en este archivo (⬜ → 🟡 → ✅). Al cerrar 
 
 ## Avance real (corte 24-nov-2026)
 
-**Resumen honesto:** de las 9 fases del refactor de `docs/architecture.html` (§9), **ninguna ha pasado su gate formal todavía**. Se avanzó mucho en F0 y en F4 (pagos), algo en F1 y F3, y **no se ha empezado** F2 (gateway), F5 (servicios laterales), F6 (apps iOS/Android) ni F7. De las 76 tareas del plan, 12 están hechas (✅) y 7 en curso (🟡): ≈ 16 % hechas, ≈ 25 % contando las parciales (cuenta del 24-nov-2026, F4 incluye las 2 tareas nuevas F4.16 y F4.17). La arquitectura objetivo (gateway + edge services + web estático + apps nativas) **no existe aún**: hoy sigue siendo el monolito Go detrás de nginx con el web de Next.js.
+**Resumen honesto:** de las 9 fases del refactor de `docs/architecture.html` (§9), **ninguna ha pasado su gate formal todavía**. Se avanzó mucho en F0 y en F4 (pagos), algo en F1 y F3, y **no se ha empezado** F2 (gateway), F5 (servicios laterales), F6 (apps iOS/Android) ni F7. De las 76 tareas del plan, 13 están hechas (✅) y 7 en curso (🟡): ≈ 17 % hechas, ≈ 26 % contando las parciales (cuenta del 24-nov-2026, F4 incluye las 2 tareas nuevas F4.16 y F4.17). La arquitectura objetivo (gateway + edge services + web estático + apps nativas) **no existe aún**: hoy sigue siendo el monolito Go detrás de nginx con el web de Next.js.
 
 | Fase | Qué es | Hecho | Pendiente | Estado |
 |---|---|---|---|---|
-| F0 Fundaciones | Guardrails, entorno local, smoke, línea base, CI | 5 de 7 ✅ + CI escrito | F0.1 repo real (se sube ahora), F0.7 ver el CI verde en GitHub, tag `baseline-pre-refactor` | 🟡 casi |
+| F0 Fundaciones | Guardrails, entorno local, smoke, línea base, CI | 6 de 7 ✅ (CI verde en GitHub, PR #1) | F0.1: falta el tag `baseline-pre-refactor` 👤 | 🟡 casi cerrada |
 | F1 Contrato OpenAPI | Contrato escrito y congelado + clientes | Borrador: 27 rutas, 31 operaciones, 86 schemas (hay 72 registros en el router, 8 son `/mock`) | Cubrir todas las rutas, ejemplos reales, tests de contrato, congelar v1, generar clientes | 🟡 borrador |
 | F2 Gateway | Kong/Traefik delante del core (CORS, límites, `/v1`) | Nada (el nginx de producción sumó límite de intentos en `/api/auth/` y cabeceras) | Todo; depende de decidir D4 | ⬜ |
 | F3 Web aislado | Cliente generado, headers, estático | Hotspots tipados (9 pantallas), `lib/api.ts` con headers `X-Mano-*`, sesión, `useAuthGuard`; pantalla `/pagos` | Cliente generado, migrar páginas legacy, export estático, E2E en CI | 🟡 parcial |
@@ -389,6 +390,6 @@ Marca el estado de cada tarea en este archivo (⬜ → 🟡 → ✅). Al cerrar 
 
 **Desviación consciente (decisión del usuario, 24-nov-2026):** subir el código a GitHub y dejar listo el despliegue en Azure **antes** de los gates G0–G7. Se acepta como un *despliegue de la arquitectura actual en modo staging*, con llaves de **sandbox** de Wompi, `MOCK_MODE=false`, `SEED_DEMO_DATA=false`. **No** es la promoción F8 completa: no se debe cobrar dinero real hasta cerrar al menos F4.4–F4.7.
 
-**Ruta recomendada desde aquí:** (1) PR y CI verde → G0; (2) cerrar F4 (F4.4 primero) con el sandbox de Wompi; (3) decidir D4 y levantar el gateway (F2) para tener el contrato en `/v1`; (4) F1 completo + clientes generados y F3 restante; (5) F5 (auth-session primero) y F6 cuando haya imágenes mobile; (6) F7 y F8.
+**Ruta recomendada desde aquí:** (1) PR #1 con CI verde ✅ (falta fusionarlo y poner el tag) → G0; (2) cerrar F4 (F4.4 primero) con el sandbox de Wompi; (3) decidir D4 y levantar el gateway (F2) para tener el contrato en `/v1`; (4) F1 completo + clientes generados y F3 restante; (5) F5 (auth-session primero) y F6 cuando haya imágenes mobile; (6) F7 y F8.
 
 > **Costos (24-nov-2026):** cada fase tiene su costo de infraestructura en `docs/COSTS.md` §6 (hoy ≈ $39/mes; refactor económico $76–90; administrado ligero $82–150; con SLA/HA ≈ $580). Hallazgo para F4/F8: la tarifa de Wompi (2,65 % + $700 + IVA) supera la comisión del 4 % en pedidos menores de ≈ $98.400 COP; decidir quién la paga **antes** de cobrar dinero real.
