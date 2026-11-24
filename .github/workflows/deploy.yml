@@ -131,6 +131,7 @@ jobs:
           host: ${{ secrets.AZURE_VM_HOST || vars.AZURE_VM_HOST }}
           username: ${{ secrets.AZURE_VM_USER || vars.AZURE_VM_USER }}
           key: ${{ secrets.AZURE_SSH_KEY }}
+          # SOLO como secret. NO usar vars.*: las variables no se ocultan en los logs y los logs de este repo son públicos.
           password: ${{ secrets.AZURE_VM_PASSWORD }}
           fingerprint: ${{ secrets.AZURE_VM_FINGERPRINT }}
           envs: GHCR_TOKEN,GHCR_USER,DEPLOY_SHA
