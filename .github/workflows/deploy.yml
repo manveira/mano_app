@@ -202,10 +202,53 @@ jobs:
             export IMAGE_TAG="${DEPLOY_SHA}"
             $COMPOSE pull backend frontend
 
-            echo "▶ 5/6 Levantando servicios"
-            $COMPOSE up -d --remove-orphans
+            # Reversión: vuelve a las imágenes anteriores y, si se había apartado el proxy viejo, lo restaura.
+            rollback() {
+              if [ "${PREV_TAG}" = none ]; then
+                echo "⚠️  No hay una versión anterior de backend/frontend a la que volver."
+              else
+                echo "↩  Reversión a la versión anterior (${PREV_TAG})"
+                IMAGE_TAG="${PREV_TAG}" $COMPOSE up -d --no-deps backend frontend || true
+              fi
+              if [ -n "${OLD_PROXIES}" ]; then
+                echo "↩  Restaurando el proxy anterior"
+                $COMPOSE rm -sf proxy >/dev/null 2>&1 || true
+                for n in ${OLD_PROXIES}; do docker rename "${n}-anterior" "${n}" 2>/dev/null || true; docker start "${n}" || true; done
+              fi
+            }
 
-            echo "▶ 6/6 Verificando que el backend quede sano"
+            echo "▶ 5/6 Levantando servicios"
+            # Un contenedor AJENO a este proyecto puede ocupar el puerto 80/443 (p. ej. el proxy nginx de la versión anterior):
+            # si es un nginx se detiene y se renombra "-anterior" (recuperable); si no es nginx no se toca y se aborta.
+            OLD_PROXIES=""
+            PROJECT=$(basename "$PWD" | tr 'A-Z' 'a-z')
+            for port in ${PUBLISHED_PORTS:-80 443}; do
+              for cid in $(docker ps -q --filter "publish=${port}"); do
+                proj=$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.project" }}' "$cid")
+                svc=$(docker inspect --format '{{ index .Config.Labels "com.docker.compose.service" }}' "$cid")
+                name=$(docker inspect --format '{{.Name}}' "$cid" | sed 's#^/##')
+                image=$(docker inspect --format '{{.Config.Image}}' "$cid")
+                if [ "$proj" = "$PROJECT" ] && [ "$svc" = proxy ]; then continue; fi
+                echo "⚠️  ${name} (proyecto=${proj:-ninguno}, servicio=${svc:-ninguno}, imagen=${image}) ocupa el puerto ${port}"
+                case "$image" in
+                  nginx*|*/nginx*)
+                    echo "   Es un nginx (proxy de la versión anterior): se detiene y se renombra a ${name}-anterior"
+                    docker update --restart=no "$cid" >/dev/null 2>&1 || true
+                    docker stop "$cid" >/dev/null
+                    docker rename "$name" "${name}-anterior"
+                    OLD_PROXIES="${OLD_PROXIES} ${name}" ;;
+                  *) echo "❌ No es un nginx; no lo toco. Libera el puerto ${port} a mano."; exit 1 ;;
+                esac
+              done
+            done
+            if ! $COMPOSE up -d --remove-orphans; then
+              echo "❌ docker compose up falló."
+              $COMPOSE ps || true
+              rollback
+              exit 1
+            fi
+
+            echo "▶ 6/6 Verificando backend y web"
             OK=0
             for i in $(seq 1 30); do
               if $COMPOSE exec -T backend wget -qO- http://localhost:8080/api/health >/dev/null 2>&1; then OK=1; break; fi
@@ -214,19 +257,30 @@ jobs:
             if [ "$OK" != 1 ]; then
               echo "❌ El backend no respondió. Últimos logs:"
               $COMPOSE logs --tail 60 backend || true
-                if [ "${PREV_TAG}" = none ]; then
-                echo "⚠️  No hay una versión anterior a la que volver (no había app corriendo)."
-              else
-                echo "↩  Reversión a la versión anterior (${PREV_TAG})"
-                export IMAGE_TAG="${PREV_TAG}"
-                $COMPOSE up -d --no-deps backend frontend || true
-              fi
+              rollback
+              exit 1
+            fi
+            # Y la web a través del proxy (en el propio servidor): la home debe responder 200 y la API por el proxy también.
+            WEB=000; API=000
+            for i in $(seq 1 20); do
+              WEB=$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' http://localhost/ || true)
+              API=$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' http://localhost/api/health || true)
+              case "$WEB" in 200|301|302) wok=1 ;; *) wok=0 ;; esac   # 301/302: con dominio, el proxy redirige a HTTPS
+              case "$API" in 200|301|302) aok=1 ;; *) aok=0 ;; esac
+              [ "$wok" = 1 ] && [ "$aok" = 1 ] && break
+              sleep 3
+            done
+            if [ "${wok:-0}" != 1 ] || [ "${aok:-0}" != 1 ]; then
+              echo "❌ A través del proxy: web=${WEB}, api=${API}. Estado de los contenedores:"
+              $COMPOSE ps || true
+              $COMPOSE logs --tail 40 proxy frontend || true
+              rollback
               exit 1
             fi
             echo "${DEPLOY_SHA}" > .last_good_tag
             docker image prune -f >/dev/null 2>&1 || true
             $COMPOSE ps
-            echo "✅ Deploy completado — commit ${DEPLOY_SHA}"
+            echo "✅ Deploy completado — commit ${DEPLOY_SHA} (web=${WEB}, api=${API})"
             [ -n "${NGINX_CONF:-}" ] && echo "🌐 Abre: ${APP_BASE_URL}" || true
             REMOTE
             bash "$SCRIPT_FILE" < /dev/null
