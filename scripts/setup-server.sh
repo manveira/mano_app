@@ -92,8 +92,7 @@ if [ ! -f "$APP_DIR/.env" ]; then
   echo "   REDIS_PASSWORD=\$(openssl rand -hex 16)"
   echo "   JWT_SECRET=\$(openssl rand -hex 32)"
   echo "   APP_BASE_URL=https://$DOMAIN"
-  echo "   WOMPI_PUBLIC_KEY=pub_prod_..."
-  echo "   WOMPI_PRIVATE_KEY=prv_prod_..."
+  echo "   WOMPI_*  (primero las llaves de PRUEBAS pub_test_/prv_test_/test_integrity_/test_events_)"
   echo "   SMTP_USER=tu@gmail.com"
   echo "   SMTP_PASS=tu_app_password"
   echo ""
@@ -102,9 +101,15 @@ if [ ! -f "$APP_DIR/.env" ]; then
 fi
 
 # ── 7. Configurar nginx con el dominio ────────────────────────────────────────
+# nginx.prod.conf es una plantilla: la imagen de nginx sustituye ${DOMAIN} al arrancar. Solo se asegura DOMAIN en el .env
+# (no se edita ningún archivo versionado, así las actualizaciones por git no generan conflictos).
 echo "🌐 Configurando nginx para $DOMAIN..."
-sed -i "s/TU_DOMINIO.COM/$DOMAIN/g" $APP_DIR/nginx.prod.conf
-echo "✅ nginx.prod.conf configurado"
+if grep -qE '^DOMAIN=' $APP_DIR/.env; then
+  sed -i "s|^DOMAIN=.*|DOMAIN=$DOMAIN|" $APP_DIR/.env
+else
+  echo "DOMAIN=$DOMAIN" >> $APP_DIR/.env
+fi
+echo "✅ DOMAIN=$DOMAIN en .env"
 
 # ── 8. Obtener certificado SSL ────────────────────────────────────────────────
 mkdir -p /var/www/certbot
@@ -162,4 +167,4 @@ echo "📋 Comandos útiles:"
 echo "   Ver logs:     docker compose -f $APP_DIR/docker-compose.prod.yml logs -f"
 echo "   Estado:       docker compose -f $APP_DIR/docker-compose.prod.yml ps"
 echo "   Reiniciar:    docker compose -f $APP_DIR/docker-compose.prod.yml restart"
-echo "   Actualizar:   cd $APP_DIR && git pull && docker compose -f docker-compose.prod.yml up -d --pull always"
+echo "   Actualizar:   desde GitHub: Actions → Deploy Mano App → Run workflow (escribe DEPLOY). Ver docs/DEPLOY.md"

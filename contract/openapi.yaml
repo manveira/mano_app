@@ -1,0 +1,3899 @@
+# GENERADO por contract/build.py a partir de contract/src/. NO EDITAR A MANO.
+openapi: 3.0.3
+info:
+  title: Mano App API
+  version: 1.0.0-draft
+  description: "Contrato del API de Mano App (marketplace local: negocios, comisionistas y compradores).\n\n**Este contrato\
+    \ describe el comportamiento REAL del backend actual (Go/Gin) tal cual es, incluidas sus\ninconsistencias.** Una vez congelado\
+    \ (`contract-v1.0.0`) solo se permiten cambios aditivos; los cambios\nincompatibles van a `/v2`.\n\n## Acceso\nTodos los\
+    \ clientes (web, iOS, Android) hablan **solo con el API Gateway**: `https://api.mano.app/v1`.\nEn local: gateway `http://localhost:8000/v1`;\
+    \ backend directo (temporal) `http://localhost:8080/api`.\n\n## Headers de cliente (los envía todo cliente; el gateway\
+    \ los usa, el backend actual los ignora)\n| Header | Valor | Uso |\n|---|---|---|\n| `X-Mano-Client` | `web` \\| `ios`\
+    \ \\| `android` | métricas, límites por plataforma |\n| `X-Mano-Client-Version` | semver, p. ej. `1.4.2` | el gateway\
+    \ responde `426` si es inferior al mínimo |\n| `X-Mano-Build` | número de build (móviles) | diagnóstico |\n| `X-Mano-Device-Id`\
+    \ | UUID de la instalación | límites por dispositivo, anti-abuso |\n| `X-Request-Id` | UUID (opcional) | trazabilidad\
+    \ |\n\nLos headers de cliente **no autorizan**: son falsificables. La autorización es el JWT.\n\n## Convenciones reales\
+    \ del backend (no se \"arreglan\" en v1)\n- JSON en `snake_case`. Montos en COP como número (`float64`); en `WompiTransaction.amount`\
+    \ están en centavos.\n- Errores: `{\"error\": \"mensaje\"}` con el código HTTP correspondiente.\n- Respuestas **inconsistentes**:\
+    \ unas listas vienen envueltas (`{\"businesses\":[...]}`), unos recursos envueltos\n  (`{\"order\":{...}}`) y otros directos\
+    \ (`POST /orders` devuelve la orden sin envolver).\n- Las listas vacías pueden llegar como `null` (no `[]`): los clientes\
+    \ deben tolerarlo.\n- Los structs anidados de GORM (`business`, `delivery`, `product`, …) están **siempre presentes**\
+    \ en el JSON de\n  `Order`/`OrderItem`/`ReferralLink`, con valores cero (`id: 0`) cuando no fueron precargados.\n- Fechas\
+    \ ISO-8601 (`2026-10-27T10:00:00Z`). Una fecha sin asignar llega como `0001-01-01T00:00:00Z`.\n- Autenticación: `Authorization:\
+    \ Bearer <JWT>` (HS256, 72 h). Roles: `customer`, `business_owner`, `freelancer`, `admin`.\n"
+  contact:
+    name: Mano App
+servers:
+- url: http://localhost:8000/v1
+  description: Gateway local (a partir de la fase F2)
+- url: http://localhost:8080/api
+  description: Backend directo local (temporal, hasta F2)
+- url: https://api.mano.app/v1
+  description: Producción (fase F8)
+tags:
+- name: Health
+- name: Auth
+- name: Usuario
+- name: Negocios
+- name: Productos
+- name: Órdenes
+- name: Pagos
+- name: Entregas
+- name: Comisionistas
+- name: Referidos
+- name: Dashboards
+- name: Social
+- name: Publicidad
+- name: Mapa
+- name: Admin
+- name: Webhooks
+security: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT HS256 obtenido en `POST /auth/signin` (72 h).
+  parameters:
+    IdPath:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+  responses:
+    BadRequest:
+      description: Petición inválida (validación, JSON mal formado, regla de negocio).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Falta el token, es inválido o expiró.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: El rol o la propiedad del recurso no permiten la operación.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Recurso inexistente.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ServerError:
+      description: Error interno.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    AdminApplicationsResponse:
+      type: object
+      required:
+      - applications
+      - count
+      properties:
+        applications:
+          type: array
+          description: Solicitudes con `status = pending`, de la más antigua a la más reciente.
+          items:
+            $ref: '#/components/schemas/BusinessApplication'
+        count:
+          type: integer
+          minimum: 0
+    AdminApproveBusinessResponse:
+      type: object
+      required:
+      - message
+      - business_id
+      properties:
+        message:
+          type: string
+          example: business approved
+        business_id:
+          type: integer
+          format: int64
+    AdminDisputesResponse:
+      type: object
+      required:
+      - disputes
+      - count
+      properties:
+        disputes:
+          type: array
+          description: 'Órdenes con `status = disputed`, de la más reciente a la más antigua. Cada `items[].product` viene
+            precargado;
+
+            `business` y `delivery` llegan siempre con valores cero (`id: 0`); `customer_id`, `freelancer_id`,
+
+            `referral_link_id`, `items` y `commission_splits` pueden faltar (omitempty).
+
+            '
+          items:
+            $ref: '#/components/schemas/Order'
+        count:
+          type: integer
+          minimum: 0
+    AdminPendingBusinessesResponse:
+      type: object
+      required:
+      - businesses
+      - count
+      properties:
+        businesses:
+          type: array
+          items:
+            $ref: '#/components/schemas/Business'
+        count:
+          type: integer
+          minimum: 0
+    AdminProcessWithdrawalResponse:
+      type: object
+      required:
+      - message
+      - id
+      properties:
+        message:
+          type: string
+          example: withdrawal processed
+        id:
+          type: integer
+          format: int64
+    AdminRejectBusinessRequest:
+      type: object
+      description: Cuerpo opcional. Un JSON mal formado o ausente se ignora silenciosamente (`reason` queda vacío).
+      properties:
+        reason:
+          type: string
+          example: Documentos ilegibles
+    AdminRejectBusinessResponse:
+      type: object
+      required:
+      - message
+      - business_id
+      - reason
+      properties:
+        message:
+          type: string
+          example: business rejected
+        business_id:
+          type: integer
+          format: int64
+        reason:
+          type: string
+          description: Eco del `reason` recibido (cadena vacía si no se envió). NO se persiste en ningún lado.
+    AdminWithdrawalsResponse:
+      type: object
+      required:
+      - withdrawals
+      - count
+      properties:
+        withdrawals:
+          type: array
+          description: Retiros con `status = pending`, del más antiguo al más reciente.
+          items:
+            $ref: '#/components/schemas/WithdrawalRequest'
+        count:
+          type: integer
+          minimum: 0
+    Advertisement:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        business_id:
+          type: integer
+          format: int64
+        title:
+          type: string
+        description:
+          type: string
+        image_url:
+          type: string
+        package_type:
+          type: string
+          example: Paquete básico
+        active:
+          type: boolean
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+    AdvertisementsResponse:
+      type: object
+      required:
+      - advertisements
+      properties:
+        advertisements:
+          type: array
+          items:
+            $ref: '#/components/schemas/Advertisement'
+    AdvertisingPackage:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        duration_days:
+          type: integer
+        active:
+          type: boolean
+    Business:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        owner_id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        location:
+          type: string
+        address:
+          type: string
+        latitude:
+          type: number
+        longitude:
+          type: number
+        image_url:
+          type: string
+        is_featured:
+          type: boolean
+        is_approved:
+          type: boolean
+        default_commission_rate:
+          type: number
+          description: Fracción 0.10–0.40
+        monthly_limit:
+          type: integer
+          description: Unidades por mes; 0 = sin límite
+        advertisements:
+          type: array
+          items:
+            $ref: '#/components/schemas/Advertisement'
+          nullable: true
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/Product'
+          nullable: true
+    BusinessApplication:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        business_name:
+          type: string
+        category:
+          type: string
+        description:
+          type: string
+        nequi_number:
+          type: string
+        document_image_url:
+          type: string
+        status:
+          type: string
+          enum:
+          - pending
+          - approved
+          - rejected
+        rejection_reason:
+          type: string
+        reviewed_by:
+          type: integer
+          format: int64
+          nullable: true
+        reviewed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+    BusinessApplyRequest:
+      type: object
+      required:
+      - business_name
+      - category
+      - description
+      - nequi_number
+      properties:
+        business_name:
+          type: string
+          example: Contrato Core Negocio
+        category:
+          type: string
+        description:
+          type: string
+        nequi_number:
+          type: string
+        document_image_url:
+          type: string
+          description: URL de la foto del RUT/cédula (opcional)
+    BusinessApplyResponse:
+      type: object
+      properties:
+        application:
+          $ref: '#/components/schemas/BusinessApplication'
+        message:
+          type: string
+          example: Application submitted. Review takes 24-48 hours.
+    BusinessCreateRequest:
+      type: object
+      required:
+      - name
+      - description
+      - category
+      - location
+      properties:
+        name:
+          type: string
+          example: Contrato Core Tienda
+        description:
+          type: string
+        category:
+          type: string
+        location:
+          type: string
+          example: Tumaco
+        address:
+          type: string
+        latitude:
+          type: number
+        longitude:
+          type: number
+        image_url:
+          type: string
+        default_commission_rate:
+          type: number
+          description: Fracción 0.10–0.40. Fuera de rango (o ausente) se reemplaza SIN error por 0.15.
+        monthly_limit:
+          type: integer
+          description: Unidades por mes; 0 = sin límite
+    BusinessDashboardEntry:
+      type: object
+      required:
+      - business_id
+      - name
+      - orders
+      - revenue
+      properties:
+        business_id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        orders:
+          type: integer
+          format: int64
+          description: Órdenes con status en (`pending`, `completed`, `delivered`). NOTA - `pending` no es un status real
+            de orden (es `pending_payment`) y se excluyen `paid`/`dispatched`/`in_transit`.
+        revenue:
+          type: number
+          description: Suma de `total_amount` de esas mismas órdenes.
+    BusinessDashboardResponse:
+      type: object
+      required:
+      - dashboard
+      properties:
+        dashboard:
+          type: array
+          description: Un elemento por negocio del owner (incluye no aprobados). Sin negocios => `[]`.
+          items:
+            $ref: '#/components/schemas/BusinessDashboardEntry'
+    BusinessDashboardStatsResponse:
+      type: object
+      description: 'Los arrays pueden ser `null` cuando el negocio existe pero no hay filas (Scan sobre slice nil). Si el
+        owner no
+
+        tiene negocios, el backend responde `{sales_by_day: [], top_products: [], top_freelancers: []}` y **omite `period`**.
+
+        Solo cuentan órdenes con `payment_status = ''paid''`.
+
+        '
+      required:
+      - sales_by_day
+      - top_products
+      - top_freelancers
+      properties:
+        period:
+          type: string
+          description: Eco literal del query `period` (por defecto `7d`); NO se normaliza (`?period=foo` devuelve `foo` con
+            ventana de 7 días). Ausente si el owner no tiene negocios.
+          example: 7d
+        sales_by_day:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/BusinessStatsDaySale'
+        top_products:
+          type: array
+          nullable: true
+          description: Top 5 por cantidad vendida.
+          items:
+            $ref: '#/components/schemas/BusinessStatsTopProduct'
+        top_freelancers:
+          type: array
+          nullable: true
+          description: Top 5 por número de ventas.
+          items:
+            $ref: '#/components/schemas/BusinessStatsTopFreelancer'
+    BusinessDetailResponse:
+      type: object
+      description: 'INCONSISTENCIA: `products` aparece duplicado — dentro de `business.products` (precarga GORM, omitido si
+        está
+
+        vacío) y en el nivel superior. No filtra por `is_approved` ni por `is_active`/`is_exclusive`: devuelve TODOS
+
+        los productos (activos, inactivos, exclusivos Pro) de cualquier negocio, incluso no aprobado.
+
+        '
+      properties:
+        business:
+          $ref: '#/components/schemas/Business'
+        products:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/Product'
+    BusinessListResponse:
+      type: object
+      description: Lista envuelta. Los `Business` de listas NO traen `products` ni `advertisements` (omitidos por `omitempty`).
+      properties:
+        businesses:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/Business'
+    BusinessPatchRequest:
+      type: object
+      description: 'Todos los campos son opcionales; solo se actualizan los que traen valor distinto del cero del tipo
+
+        (`""` o fuera de rango = "no cambiar"). Imposible vaciar un texto. `latitude`, `longitude`, `category`,
+
+        `monthly_limit` y `is_approved` NO son editables por este endpoint (se ignoran).
+
+        '
+      properties:
+        name:
+          type: string
+          description: Si cambia
+          se regenera `slug` (único): null
+        description:
+          type: string
+        image_url:
+          type: string
+        default_commission_rate:
+          type: number
+          description: Solo se aplica si está entre 0.10 y 0.40 (inclusive); si no
+          se ignora en silencio: null
+        address:
+          type: string
+        location:
+          type: string
+    BusinessPublicProfileResponse:
+      type: object
+      description: Perfil público por slug. Solo negocios aprobados; los productos son los `is_active` (incluye exclusivos
+        Pro, sin filtrar).
+      properties:
+        business:
+          $ref: '#/components/schemas/Business'
+        products:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/Product'
+        stats:
+          $ref: '#/components/schemas/BusinessPublicStats'
+        slug:
+          type: string
+          description: Eco del parámetro de ruta
+    BusinessPublicStats:
+      type: object
+      properties:
+        total_orders:
+          type: integer
+          format: int64
+          description: Órdenes con `payment_status = paid`
+        total_revenue:
+          type: number
+          description: Suma de `total_amount` de esas órdenes (COP)
+    BusinessStatsDaySale:
+      type: object
+      required:
+      - day
+      - orders
+      - revenue
+      properties:
+        day:
+          type: string
+          format: date-time
+          description: Día (agrupado por `DATE(created_at)`) serializado como medianoche UTC, p. ej. `2026-10-28T00:00:00Z`
+            (no es una fecha `YYYY-MM-DD`).
+        orders:
+          type: integer
+          format: int64
+        revenue:
+          type: number
+    BusinessStatsTopFreelancer:
+      type: object
+      required:
+      - freelancer_id
+      - freelancer_name
+      - sales
+      - commission_earned
+      properties:
+        freelancer_id:
+          type: integer
+          format: int64
+        freelancer_name:
+          type: string
+        sales:
+          type: integer
+          format: int64
+        commission_earned:
+          type: number
+          description: 'DEFECTO CONOCIDO: siempre 0. El SQL usa el alias `commission_earned` y el struct Go tiene el campo
+            `Commission`, por lo que GORM no lo mapea.'
+          example: 0
+    BusinessStatsTopProduct:
+      type: object
+      required:
+      - product_id
+      - product_name
+      - quantity_sold
+      - revenue
+      properties:
+        product_id:
+          type: integer
+          format: int64
+        product_name:
+          type: string
+        quantity_sold:
+          type: integer
+          format: int64
+        revenue:
+          type: number
+    CommissionSplit:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        order_id:
+          type: integer
+          format: int64
+        recipient_type:
+          type: string
+          enum:
+          - business
+          - freelancer
+          - platform
+        recipient_id:
+          type: integer
+          format: int64
+          nullable: true
+        amount:
+          type: number
+        percentage:
+          type: number
+        status:
+          type: string
+          enum:
+          - pending
+          - released
+          - failed
+        released_at:
+          type: string
+          format: date-time
+          nullable: true
+    CreateAdvertisementRequest:
+      type: object
+      required:
+      - business_id
+      - title
+      - description
+      - package_type
+      properties:
+        business_id:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Negocio propio del usuario autenticado.
+        title:
+          type: string
+          minLength: 1
+        description:
+          type: string
+          minLength: 1
+        image_url:
+          type: string
+        package_type:
+          type: string
+          minLength: 1
+          description: 'Texto libre (no se valida contra `AdvertisingPackage`). Solo los valores exactos "Paquete destacado",
+
+            "Paquete premium" y "Paquete básico" reciben prioridad en `GET /feed`.
+
+            '
+          example: Paquete premium
+        active:
+          type: boolean
+          default: false
+          description: Si se omite queda en `false` y el anuncio no aparece en `/ads`, `/feed` ni `/recommendations`.
+    CreateStoryRequest:
+      type: object
+      required:
+      - title
+      - content
+      properties:
+        title:
+          type: string
+          minLength: 1
+          example: Historia contrato social 1
+        content:
+          type: string
+          minLength: 1
+          example: Contenido único
+        media_url:
+          type: string
+          example: https://example.com/a.jpg
+      description: '`expires_at` y `user_id` NO se aceptan del cliente: `user_id` sale del JWT y `expires_at` nunca se asigna.
+
+        Cualquier propiedad adicional se ignora.
+
+        '
+    Delivery:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        order_id:
+          type: integer
+          format: int64
+        courier_id:
+          type: integer
+          format: int64
+          nullable: true
+        type:
+          type: string
+          enum:
+          - business_own
+          - mano_courier
+        status:
+          type: string
+          enum:
+          - scheduled
+          - picked_up
+          - in_transit
+          - delivered
+          - failed
+        eta:
+          type: string
+        tracking:
+          type: string
+        picked_up_at:
+          type: string
+          format: date-time
+          nullable: true
+        delivered_at:
+          type: string
+          format: date-time
+          nullable: true
+    Error:
+      type: object
+      required:
+      - error
+      properties:
+        error:
+          type: string
+          example: invalid credentials
+    FeedResponse:
+      type: object
+      description: Feed público. Historias vigentes + anuncios activos ordenados por prioridad de paquete.
+      required:
+      - stories
+      - advertisements
+      properties:
+        stories:
+          type: array
+          description: Historias con `expires_at > now` (o NULL), de la más reciente a la más antigua (`created_at DESC`).
+          items:
+            $ref: '#/components/schemas/Story'
+        advertisements:
+          type: array
+          description: 'Anuncios con `active = true`. Orden: "Paquete destacado" → "Paquete premium" → "Paquete básico" →
+            cualquier otro
+
+            `package_type`. Dentro de una misma prioridad el orden NO está garantizado como estable (se ordena en memoria
+            con
+
+            un intercambio simple; de partida vienen por `created_at DESC`).
+
+            '
+          items:
+            $ref: '#/components/schemas/Advertisement'
+    FreelancerDashboardResponse:
+      type: object
+      description: Solo órdenes con `payment_status = 'paid'` y `freelancer_id` del usuario.
+      required:
+      - period
+      - earnings_by_day
+      - top_products
+      - balance
+      - period_total
+      properties:
+        period:
+          type: string
+          description: Eco literal del query `period` (por defecto `7d`); cualquier valor distinto de `30d` usa ventana de
+            7 días.
+          example: 7d
+        earnings_by_day:
+          type: array
+          nullable: true
+          description: '`null` (no `[]`) si no hubo ventas en el período.'
+          items:
+            $ref: '#/components/schemas/FreelancerEarningDay'
+        top_products:
+          type: array
+          nullable: true
+          description: Top 5 por ventas. `null` si no hubo ventas.
+          items:
+            $ref: '#/components/schemas/FreelancerTopProduct'
+        balance:
+          type: number
+          description: Saldo actual (`earnings_balance`).
+        period_total:
+          type: number
+          description: Suma de `freelancer_commission` en el período.
+    FreelancerEarningDay:
+      type: object
+      required:
+      - day
+      - sales
+      - earnings
+      properties:
+        day:
+          type: string
+          format: date-time
+          description: Medianoche UTC del día (ver `BusinessStatsDaySale.day`).
+        sales:
+          type: integer
+          format: int64
+        earnings:
+          type: number
+          description: Suma de `freelancer_commission` del día
+    FreelancerTopProduct:
+      type: object
+      required:
+      - product_id
+      - product_name
+      - sales
+      - earned
+      properties:
+        product_id:
+          type: integer
+          format: int64
+        product_name:
+          type: string
+        sales:
+          type: integer
+          format: int64
+        earned:
+          type: number
+    HealthResponse:
+      type: object
+      required:
+      - status
+      properties:
+        status:
+          type: string
+          example: ok
+    MeResponse:
+      type: object
+      description: 'Usuario envuelto en `user`. Solo se seleccionan `id, name, email, role, username, plan, plan_expires_at,
+
+        earnings_balance, is_verified`; los demás campos de `User` (`document_id`, `phone`, `nequi_number`,
+
+        `referred_by`) llegan vacíos. Desde v1.1 `document_id`, `phone`, `nequi_number` y `referral_code` SÍ vienen
+
+        con su valor (son datos del propio usuario).
+
+        '
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+    Movement:
+      type: object
+      properties:
+        type:
+          type: string
+          enum:
+          - commission
+          - withdrawal
+        title:
+          type: string
+        amount:
+          type: number
+          description: COP. Positivo = ingreso, negativo = egreso
+        status:
+          type: string
+          enum:
+          - released
+          - pending
+          - processing
+          - completed
+          - failed
+        order_id:
+          type: integer
+          format: int64
+          description: Solo en comisiones
+        created_at:
+          type: string
+          format: date-time
+    MovementsResponse:
+      type: object
+      properties:
+        movements:
+          type: array
+          items:
+            $ref: '#/components/schemas/Movement'
+    NearbyBusinessesResponse:
+      type: object
+      required:
+      - businesses
+      properties:
+        businesses:
+          type: array
+          nullable: true
+          description: 'Negocios (aprobados o no). Sin `latitude`+`longitude`: todos los negocios (`[]` si no hay ninguno).
+
+            Con coordenadas: los que están dentro de `radius_km`; si ninguno coincide llega `null` (no `[]`).
+
+            '
+          items:
+            $ref: '#/components/schemas/Business'
+    Order:
+      type: object
+      description: Orden. `business`, `delivery` y los `product` de cada ítem vienen SIEMPRE (con ceros si no se precargaron).
+      properties:
+        id:
+          type: integer
+          format: int64
+        business_id:
+          type: integer
+          format: int64
+        business:
+          $ref: '#/components/schemas/Business'
+        customer_id:
+          type: integer
+          format: int64
+          nullable: true
+          description: Ausente si es compra guest
+        guest_name:
+          type: string
+        guest_phone:
+          type: string
+        buyer_document_id:
+          type: string
+        freelancer_id:
+          type: integer
+          format: int64
+          nullable: true
+        referral_link_id:
+          type: integer
+          format: int64
+          nullable: true
+        total_amount:
+          type: number
+        status:
+          type: string
+          enum:
+          - pending_payment
+          - paid
+          - dispatched
+          - in_transit
+          - delivered
+          - completed
+          - disputed
+          - cancelled
+          - payment_failed
+        payment_status:
+          type: string
+          enum:
+          - pending
+          - paid
+          - failed
+          - refunded
+        escrow_status:
+          type: string
+          enum:
+          - pending
+          - held
+          - released
+          - refunded
+        commission:
+          type: number
+          description: Comisión de la plataforma (4%)
+        freelancer_commission:
+          type: number
+        wompi_transaction_id:
+          type: string
+        confirmed_at:
+          type: string
+          format: date-time
+          nullable: true
+        auto_confirm_at:
+          type: string
+          format: date-time
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItem'
+          nullable: true
+        commission_splits:
+          type: array
+          items:
+            $ref: '#/components/schemas/CommissionSplit'
+          nullable: true
+        delivery:
+          $ref: '#/components/schemas/Delivery'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    OrderItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        order_id:
+          type: integer
+          format: int64
+        product_id:
+          type: integer
+          format: int64
+        product:
+          $ref: '#/components/schemas/Product'
+        quantity:
+          type: integer
+        unit_price:
+          type: number
+    PackagesResponse:
+      type: object
+      required:
+      - packages
+      properties:
+        packages:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdvertisingPackage'
+    Payment:
+      type: object
+      description: Un pago con Wompi y el pedido al que corresponde.
+      properties:
+        reference:
+          type: string
+          example: MANO-49-1795507986
+          description: Referencia única que enviamos a Wompi (`MANO-<pedido>-<epoch>`).
+        wompi_id:
+          type: string
+          example: 12268215-1795508021-44573
+          description: Id de la transacción en Wompi (vacío mientras no exista).
+        order_id:
+          type: integer
+          format: int64
+          example: 49
+        amount:
+          type: number
+          example: 10000
+          description: Monto en pesos COP.
+        amount_in_cents:
+          type: integer
+          format: int64
+          example: 1000000
+          description: Monto en centavos
+          como lo maneja Wompi.: null
+        currency:
+          type: string
+          example: COP
+        status:
+          type: string
+          enum:
+          - PENDING
+          - APPROVED
+          - DECLINED
+          - VOIDED
+          - ERROR
+        status_message:
+          type: string
+          example: Número no válido en Sandbox
+          description: Motivo informado por Wompi (si lo hay).
+        payment_method:
+          type: string
+          example: NEQUI
+          description: CARD, NEQUI, PSE, BANCOLOMBIA_TRANSFER… (MOCK_NEQUI en modo simulado).
+        created_at:
+          type: string
+          format: date-time
+        finalized_at:
+          type: string
+          format: date-time
+        order_status:
+          type: string
+          example: paid
+        escrow_status:
+          type: string
+          example: held
+      required:
+      - reference
+      - amount
+      - amount_in_cents
+      - currency
+      - status
+      - created_at
+    PaymentDetailResponse:
+      type: object
+      properties:
+        payment:
+          $ref: '#/components/schemas/Payment'
+        timeline:
+          type: array
+          description: Cambios de estado registrados, del más antiguo al más reciente.
+          items:
+            type: object
+            properties:
+              status:
+                type: string
+              source:
+                type: string
+                enum:
+                - webhook
+                - sync
+                - reconcile
+              at:
+                type: string
+                format: date-time
+    PaymentMethod:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        provider:
+          type: string
+        account_id:
+          type: string
+        display_name:
+          type: string
+        type:
+          type: string
+        verified:
+          type: boolean
+    PaymentTransaction:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        business_id:
+          type: integer
+          format: int64
+          nullable: true
+        order_id:
+          type: integer
+          format: int64
+          nullable: true
+        amount:
+          type: number
+        currency:
+          type: string
+        status:
+          type: string
+        type:
+          type: string
+          example: package_purchase
+        reference:
+          type: string
+        stripe_payment_intent_id:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    PaymentsResponse:
+      type: object
+      properties:
+        payments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Payment'
+        count:
+          type: integer
+    Product:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        business_id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+          description: COP
+        stock:
+          type: integer
+        image_url:
+          type: string
+        commission_rate:
+          type: number
+          description: Fracción que gana el comisionista (0.10–0.40)
+        is_active:
+          type: boolean
+        is_exclusive:
+          type: boolean
+          description: Solo visible/afiliable con plan Pro
+    ProductCreateRequest:
+      type: object
+      description: 'OJO con `binding:"required"` de Go: un número igual a 0 se considera ausente, así que `stock: 0` se rechaza
+        con 400
+
+        aunque la regla diga `gte=0` (no se puede crear un producto sin stock).
+
+        '
+      required:
+      - business_id
+      - name
+      - description
+      - price
+      - stock
+      properties:
+        business_id:
+          type: integer
+          format: int64
+          minimum: 1
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+          exclusiveMinimum: true
+          minimum: 0
+          description: COP
+          debe ser > 0: null
+        stock:
+          type: integer
+          minimum: 1
+          description: En la práctica ≥ 1 (0 es rechazado por `required`)
+        image_url:
+          type: string
+        commission_rate:
+          type: number
+          description: 'Fracción 0.10–0.40. Si falta o es 0 se usa `default_commission_rate` del negocio. Si viene fuera de
+            rango
+
+            responde 400 (a diferencia de `POST /businesses`, que corrige en silencio).
+
+            '
+        is_exclusive:
+          type: boolean
+          default: false
+    ProductListResponse:
+      type: object
+      properties:
+        products:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/Product'
+    ProductPatchRequest:
+      type: object
+      description: 'Solo `is_active` tiene efecto; cualquier otro campo se ignora. Al cambiar `is_active` también se sincroniza
+
+        `is_active` de todos los `ReferralLink` del producto. Un objeto `{}` es válido y no cambia nada (200).
+
+        '
+      properties:
+        is_active:
+          type: boolean
+          nullable: true
+    PurchasePackageRequest:
+      type: object
+      required:
+      - business_id
+      - package_id
+      properties:
+        business_id:
+          type: integer
+          format: int64
+          minimum: 1
+          description: Negocio propio del usuario autenticado.
+        package_id:
+          type: integer
+          format: int64
+          minimum: 1
+          description: ID de `AdvertisingPackage`.
+    PurchasePackageResponse:
+      type: object
+      required:
+      - transaction
+      - advertisement
+      properties:
+        transaction:
+          $ref: '#/components/schemas/PaymentTransaction'
+        advertisement:
+          $ref: '#/components/schemas/Advertisement'
+    RecommendationsResponse:
+      type: object
+      required:
+      - recommendations
+      properties:
+        recommendations:
+          type: object
+          required:
+          - advertisements
+          - local_businesses
+          properties:
+            advertisements:
+              type: array
+              description: Todos los anuncios activos, sin ordenar por paquete ni limitar.
+              items:
+                $ref: '#/components/schemas/Advertisement'
+            local_businesses:
+              type: array
+              description: 'Los primeros 20 negocios de la tabla (sin ORDER BY, sin filtrar `is_approved`). Si llegan `latitude`
+                y
+
+                `longitude` numéricas se conservan solo los que están a ≤ 10 km y con coordenadas distintas de (0,0);
+
+                si ninguno cumple llega `[]`.
+
+                '
+              items:
+                $ref: '#/components/schemas/Business'
+    ReferralLink:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        freelancer_id:
+          type: integer
+          format: int64
+        freelancer:
+          $ref: '#/components/schemas/User'
+        product_id:
+          type: integer
+          format: int64
+        product:
+          $ref: '#/components/schemas/Product'
+        business_id:
+          type: integer
+          format: int64
+        slug:
+          type: string
+        clicks:
+          type: integer
+        conversions:
+          type: integer
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+    ResolveDisputeRequest:
+      type: object
+      required:
+      - resolution
+      properties:
+        resolution:
+          type: string
+          enum:
+          - refund_buyer
+          - release_business
+          description: '- `refund_buyer`: orden `cancelled`, escrow `refunded`, pago `refunded`; los splits `pending` pasan
+            a `failed`.
+
+            - `release_business`: orden `delivered`, escrow `released`; se liberan los splits (escrow normal).
+
+            '
+        notes:
+          type: string
+          description: Se acepta pero NO se guarda ni se devuelve.
+    ResolveDisputeResponse:
+      type: object
+      required:
+      - message
+      - status
+      - escrow_status
+      properties:
+        message:
+          type: string
+          description: '"Dispute resolved" (refund_buyer) o "Dispute resolved: payment released to business" (release_business).'
+        status:
+          type: string
+          enum:
+          - cancelled
+          - delivered
+        escrow_status:
+          type: string
+          enum:
+          - refunded
+          - released
+        payment_status:
+          type: string
+          description: Solo presente con `refund_buyer` (`refunded`). Con `release_business` la propiedad no existe.
+    SellAffiliateRequest:
+      type: object
+      required:
+      - product_id
+      properties:
+        product_id:
+          type: integer
+          format: int64
+          minimum: 1
+          description: 'ID del producto. Se bindea a `uint`: un string o un negativo falla el JSON (400 con mensaje de Go).
+
+            `0` también falla (`required` de gin trata el cero como ausente).
+
+            '
+    SellAffiliateResponse:
+      type: object
+      description: 'Respuesta de `POST /sell/affiliate`. Tiene DOS formas según el caso:
+
+        - **201** (link nuevo): `referral_link` + `url` (sin `message`).
+
+        - **200** (ya afiliado): `referral_link` + `message: "already affiliated"` (sin `url`).
+
+        En ambos casos `referral_link.freelancer` y `referral_link.product` vienen con valores cero (`id: 0`), no precargados.
+
+        '
+      required:
+      - referral_link
+      properties:
+        referral_link:
+          $ref: '#/components/schemas/ReferralLink'
+        url:
+          type: string
+          description: Solo en 201. `APP_BASE_URL` + `/r/` + slug (en local `http://localhost:3000`; por defecto `https://mano.app`).
+          example: http://localhost:3000/r/hamaca-artesanal-24-kgz1
+        message:
+          type: string
+          description: Solo en 200.
+          example: already affiliated
+    SellInsufficientBalanceError:
+      type: object
+      description: Único error del backend que añade un campo extra además de `error`.
+      required:
+      - error
+      - balance
+      properties:
+        error:
+          type: string
+          example: insufficient balance
+        balance:
+          type: number
+          description: Saldo actual del comisionista.
+          example: 24000
+    SellLink:
+      description: ReferralLink con `url` añadido (struct embebido en Go). `product` viene precargado; `freelancer` viene
+        con ceros.
+      allOf:
+      - $ref: '#/components/schemas/ReferralLink'
+      - type: object
+        properties:
+          url:
+            type: string
+            example: http://localhost:3000/r/hamaca-artesanal-24-kgz1
+    SellLinkStat:
+      type: object
+      required:
+      - slug
+      - product_name
+      - clicks
+      - conversions
+      - conversion_rate_pct
+      - earned_total
+      properties:
+        slug:
+          type: string
+        product_name:
+          type: string
+        clicks:
+          type: integer
+        conversions:
+          type: integer
+        conversion_rate_pct:
+          type: number
+          description: conversions / clicks * 100 (0 si clicks = 0, aunque haya conversiones). Puede superar 100.
+        earned_total:
+          type: number
+          description: Estimado = conversions × price × commission_rate (con el precio/tasa ACTUALES del producto, no con
+            lo realmente pagado).
+    SellLinksResponse:
+      type: object
+      required:
+      - links
+      - earnings_balance
+      properties:
+        links:
+          type: array
+          description: Solo links activos del comisionista. Vacío => `[]` (no `null`).
+          items:
+            $ref: '#/components/schemas/SellLink'
+        earnings_balance:
+          type: number
+          description: Saldo acumulado en COP.
+          example: 24000
+    SellReferralClickResponse:
+      type: object
+      required:
+      - product
+      - referral_link_id
+      - business_id
+      properties:
+        product:
+          $ref: '#/components/schemas/Product'
+        referral_link_id:
+          type: integer
+          format: int64
+          example: 1
+        business_id:
+          type: integer
+          format: int64
+          example: 2
+    SellReferralCodeResponse:
+      type: object
+      required:
+      - referral_code
+      - referral_url
+      - referred_count
+      - bonus_per_referral
+      properties:
+        referral_code:
+          type: string
+          example: testLC9E3D
+        referral_url:
+          type: string
+          description: '`APP_BASE_URL` + `/signup?ref=` + código.'
+          example: http://localhost:3000/signup?ref=testLC9E3D
+        referred_count:
+          type: integer
+          format: int64
+          description: Usuarios con `referred_by` igual al usuario autenticado.
+        bonus_per_referral:
+          type: integer
+          description: Constante fija en el handler (5000 COP); no se lee de configuración.
+          example: 5000
+    SellStatsResponse:
+      type: object
+      required:
+      - links
+      - total_balance
+      - plan_expires
+      properties:
+        links:
+          type: array
+          items:
+            $ref: '#/components/schemas/SellLinkStat'
+        total_balance:
+          type: number
+          description: Saldo actual (`earnings_balance`) en COP.
+        plan_expires:
+          type: string
+          format: date-time
+          nullable: true
+          description: Vencimiento del plan Pro; `null` si el plan Pro no tiene vencimiento.
+    SellStorefrontProduct:
+      type: object
+      required:
+      - id
+      - name
+      - description
+      - price
+      - image_url
+      - commission_rate
+      - referral_slug
+      - referral_url
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          type: number
+        image_url:
+          type: string
+        commission_rate:
+          type: number
+        business_id:
+          type: integer
+          format: int64
+          description: 'Añadido en v1.1 (aditivo): necesario para armar el carrito'
+        referral_slug:
+          type: string
+        referral_url:
+          type: string
+          description: '`APP_BASE_URL` + `/r/` + slug.'
+    SellStorefrontResponse:
+      type: object
+      required:
+      - freelancer
+      - products
+      properties:
+        freelancer:
+          type: object
+          required:
+          - name
+          - username
+          properties:
+            name:
+              type: string
+              example: María García
+            username:
+              type: string
+              example: maria
+        products:
+          type: array
+          description: Solo links activos con producto activo. Sin ninguno => `[]`. No se ordena de forma garantizada.
+          items:
+            $ref: '#/components/schemas/SellStorefrontProduct'
+    SellUpgradeProResponse:
+      type: object
+      required:
+      - plan
+      - plan_expires_at
+      - message
+      properties:
+        plan:
+          type: string
+          enum:
+          - pro
+          example: pro
+        plan_expires_at:
+          type: string
+          format: date-time
+          description: Ahora + 30 días. Se SOBRESCRIBE (no se acumula) si ya era Pro.
+        message:
+          type: string
+          example: Plan Pro activado por 30 días
+    SellWithdrawRequest:
+      type: object
+      required:
+      - amount
+      - nequi_number
+      properties:
+        amount:
+          type: number
+          description: 'COP. Validación gin: `required,gt=0` (0 o ausente => error de `required`; negativo => error de `gt`).
+
+            Después, en orden: saldo suficiente (400 `insufficient balance`) y luego mínimo 5000 (400).
+
+            '
+          example: 6000
+        nequi_number:
+          type: string
+          description: Obligatorio, sin validación de formato.
+          example: '3009990001'
+    SellWithdrawResponse:
+      type: object
+      required:
+      - withdrawal
+      - remaining_balance
+      - message
+      properties:
+        withdrawal:
+          $ref: '#/components/schemas/WithdrawalRequest'
+        remaining_balance:
+          type: number
+          description: Saldo tras descontar el retiro.
+          example: 18000
+        message:
+          type: string
+          example: Withdrawal request created. Processing in 1-2 business days.
+    SignInRequest:
+      type: object
+      required:
+      - email
+      - password
+      properties:
+        email:
+          type: string
+          format: email
+          description: Se compara en minúsculas
+        password:
+          type: string
+    SignInResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT HS256 válido 72 h. Claims `user_id`, `role`, `email`, `exp`, `iat`.
+        user:
+          $ref: '#/components/schemas/SignInUser'
+    SignInUser:
+      type: object
+      description: Resumen del usuario devuelto en el login (4 campos, no el modelo `User`).
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum:
+          - customer
+          - business_owner
+          - freelancer
+          - courier
+          - service_provider
+          - admin
+    SignUpRequest:
+      type: object
+      description: 'Etiquetas `binding` del backend. `role` NO admite `admin`. `password` mínimo 8 caracteres.
+
+        Si `username` falta se genera a partir de `name` (minúsculas, sin espacios, con sufijo numérico si ya existe).
+
+        `referral_code` desconocido se ignora en silencio. `phone`, si viene, debe ser único.
+
+        '
+      required:
+      - name
+      - email
+      - password
+      - role
+      properties:
+        name:
+          type: string
+          example: Contrato Core Uno
+        email:
+          type: string
+          format: email
+          example: core.uno@example.com
+          description: Se guarda en minúsculas
+        password:
+          type: string
+          minLength: 8
+          example: password123
+        role:
+          type: string
+          enum:
+          - business_owner
+          - freelancer
+          - customer
+          - courier
+          - service_provider
+          description: courier = Domiciliario, service_provider = Prestación de servicios (añadidos en v1.1, aditivo)
+        phone:
+          type: string
+          example: '3991110002'
+          description: 'Opcional. Si viene, debe ser único. Registrarse SIN teléfono ya no tiene límite (hallazgo #18 corregido:
+
+            el índice único ignora la cadena vacía).
+
+            '
+        document_id:
+          type: string
+          description: Cédula; usada por el anti-fraude comprador = comisionista
+        nequi_number:
+          type: string
+        username:
+          type: string
+          example: coredos
+          description: 'Opcional. Se normaliza (minúsculas, sin espacios laterales) y debe cumplir 3–30 caracteres [a-z0-9._-];
+            si no, 400 ''invalid username ...''. Duplicado: 400 ''username already taken''.'
+        referral_code:
+          type: string
+          description: Código de quien invitó (de `GET /sell/referral-code` o el campo `referral_code` de otro usuario)
+    SignUpResponse:
+      type: object
+      description: Respuesta mínima y NO el modelo `User` completo (no devuelve `name`, `phone`, `referral_code`, etc.).
+      properties:
+        id:
+          type: integer
+          format: int64
+          example: 23
+        email:
+          type: string
+          format: email
+          description: En minúsculas
+        role:
+          type: string
+          enum:
+          - business_owner
+          - freelancer
+          - customer
+          - courier
+          - service_provider
+          description: courier = Domiciliario, service_provider = Prestación de servicios (añadidos en v1.1, aditivo)
+        username:
+          type: string
+          example: contratocoreuno
+    StoriesResponse:
+      type: object
+      required:
+      - stories
+      properties:
+        stories:
+          type: array
+          items:
+            $ref: '#/components/schemas/Story'
+    Story:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        title:
+          type: string
+        content:
+          type: string
+        media_url:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+    SyncPaymentRequest:
+      type: object
+      properties:
+        order_id:
+          type: integer
+          format: int64
+          minimum: 1
+      required:
+      - order_id
+    SyncPaymentResponse:
+      type: object
+      properties:
+        order_id:
+          type: integer
+          format: int64
+        order_status:
+          type: string
+        payment_status:
+          type: string
+        escrow_status:
+          type: string
+        updated:
+          type: boolean
+          description: true si esta consulta cambió el estado de la orden.
+        payments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Payment'
+    UpdateMeRequest:
+      type: object
+      description: 'Todos los campos son opcionales; solo cambian los que vienen. `""` en `phone`, `nequi_number` o `document_id`
+        los borra.
+
+        Se ignoran espacios, guiones y puntos. Validaciones: `name` 2–80 caracteres; `phone` 7–15 dígitos y único;
+
+        `nequi_number` exactamente 10 dígitos; `document_id` 5–15 dígitos.
+
+        '
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+        nequi_number:
+          type: string
+        document_id:
+          type: string
+    User:
+      type: object
+      description: Usuario. `password` nunca se serializa. Según el endpoint solo algunos campos vienen con valor (el resto
+        en cero).
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        role:
+          type: string
+          enum:
+          - customer
+          - business_owner
+          - freelancer
+          - admin
+        username:
+          type: string
+        document_id:
+          type: string
+        phone:
+          type: string
+        nequi_number:
+          type: string
+        is_verified:
+          type: boolean
+        plan:
+          type: string
+          enum:
+          - free
+          - pro
+        plan_expires_at:
+          type: string
+          format: date-time
+          nullable: true
+        earnings_balance:
+          type: number
+          description: Saldo del comisionista en COP
+        referral_code:
+          type: string
+        referred_by:
+          type: integer
+          format: int64
+          nullable: true
+        businesses:
+          type: array
+          items:
+            $ref: '#/components/schemas/Business'
+          nullable: true
+        stories:
+          type: array
+          items:
+            $ref: '#/components/schemas/Story'
+          nullable: true
+        orders:
+          type: array
+          items:
+            $ref: '#/components/schemas/Order'
+          nullable: true
+        payment_methods:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentMethod'
+          nullable: true
+    WithdrawalRequest:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        freelancer_id:
+          type: integer
+          format: int64
+        amount:
+          type: number
+        nequi_number:
+          type: string
+        status:
+          type: string
+          enum:
+          - pending
+          - processing
+          - completed
+          - failed
+        processed_at:
+          type: string
+          format: date-time
+          nullable: true
+        notes:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    WompiTransaction:
+      type: object
+      properties:
+        id:
+          type: string
+        order_id:
+          type: integer
+          format: int64
+          nullable: true
+        user_id:
+          type: integer
+          format: int64
+        amount:
+          type: integer
+          format: int64
+          description: Centavos COP
+        currency:
+          type: string
+          example: COP
+        status:
+          type: string
+          enum:
+          - PENDING
+          - APPROVED
+          - DECLINED
+          - VOIDED
+          - ERROR
+        payment_method:
+          type: string
+        reference:
+          type: string
+        redirect_url:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+paths:
+  /auth/signin:
+    post:
+      tags:
+      - Auth
+      operationId: authSignIn
+      summary: Iniciar sesión
+      description: 'Público. Devuelve el JWT (HS256, 72 h) y un resumen del usuario. El email se compara en minúsculas.
+
+        Credenciales incorrectas y usuario inexistente dan el mismo 401 `invalid credentials`.
+
+        '
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignInRequest'
+            example:
+              email: juan@example.com
+              password: password123
+      responses:
+        '200':
+          description: Sesión creada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignInResponse'
+              example:
+                token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJyb2xlIjoiYnVzaW5lc3Nfb3duZXIi...
+                user:
+                  id: 1
+                  name: Juan Pérez
+                  email: juan@example.com
+                  role: business_owner
+        '400':
+          description: Validación (`email` ausente/ inválido o `password` ausente) o JSON mal formado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: 'Key: ''signInRequest.Email'' Error:Field validation for ''Email'' failed on the ''email'' tag'
+        '401':
+          description: Credenciales inválidas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: invalid credentials
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /auth/signup:
+    post:
+      tags:
+      - Auth
+      operationId: authSignUp
+      summary: Registrar usuario
+      description: "Público. Crea un usuario con rol `business_owner`, `freelancer` o `customer` (`admin` no se puede crear\
+        \ aquí).\nNO devuelve token: hay que llamar después a `POST /auth/signin`.\n\nRarezas reales:\n- Todos los fallos\
+        \ de `INSERT` (email duplicado, teléfono vacío duplicado, username duplicado, etc.) caen en\n  un único 400 genérico\
+        \ `email already registered or invalid data`.\n- Teléfono duplicado (si se envía) da 400 `phone number already registered`.\n\
+        - Roles aceptados: `business_owner`, `freelancer`, `customer`, `courier` (Domiciliario), `service_provider` (Prestación\
+        \ de servicios).\n- Los mensajes de validación (`Key: 'signUpRequest.Password' Error:Field validation ...`) son texto\
+        \ crudo del validador de Go.\n"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignUpRequest'
+            example:
+              name: Contrato Core Uno
+              email: core.uno@example.com
+              password: password123
+              role: customer
+              phone: '3991110002'
+      responses:
+        '201':
+          description: Usuario creado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SignUpResponse'
+              example:
+                id: 23
+                email: core.uno@example.com
+                role: customer
+                username: contratocoreuno
+        '400':
+          description: 'Validación (campos requeridos, email inválido, `password` < 8, `role` fuera de `oneof`), JSON mal
+            formado,
+
+            teléfono ya registrado o email/username duplicado.
+
+            '
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                validacion:
+                  value:
+                    error: 'Key: ''signUpRequest.Password'' Error:Field validation for ''Password'' failed on the ''min''
+                      tag'
+                rol:
+                  value:
+                    error: 'Key: ''signUpRequest.Role'' Error:Field validation for ''Role'' failed on the ''oneof'' tag'
+                duplicado:
+                  value:
+                    error: email already registered or invalid data
+                telefono:
+                  value:
+                    error: phone number already registered
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /businesses:
+    get:
+      tags:
+      - Negocios
+      operationId: listBusinesses
+      summary: Listar negocios aprobados
+      description: 'Público. Solo `is_approved = true`. Sin paginación. Los filtros usan `ILIKE %valor%` (subcadena, sin distinguir
+
+        mayúsculas; dependen de PostgreSQL). No filtra por `is_featured` ni ordena de forma garantizada.
+
+        '
+      parameters:
+      - name: category
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Subcadena de `category` (ILIKE).
+        example: caf
+      - name: location
+        in: query
+        required: false
+        schema:
+          type: string
+        description: Subcadena de `location` (ILIKE).
+        example: centro
+      responses:
+        '200':
+          description: Negocios (puede ser lista vacía).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessListResponse'
+              example:
+                businesses:
+                - id: 2
+                  owner_id: 1
+                  name: Artesanías Casa Nariño
+                  slug: artesanias-casa-narino
+                  description: Hamacas, mochilas y artesanías del Pacífico colombiano
+                  category: Artesanías
+                  location: Tumaco
+                  address: Barrio El Morro 45
+                  latitude: 1.8003
+                  longitude: -78.7612
+                  image_url: https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400
+                  is_featured: false
+                  is_approved: true
+                  default_commission_rate: 0.2
+                  monthly_limit: 0
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags:
+      - Negocios
+      operationId: createBusiness
+      summary: Crear negocio
+      description: 'Requiere JWT con rol `business_owner` (validado en el handler; otros roles reciben 403).
+
+        El negocio nace con `is_approved = false` hasta que un admin lo apruebe; mientras tanto no aparece en
+
+        `GET /businesses` y no se le pueden crear productos. El `slug` se genera único a partir del nombre.
+
+        Devuelve el `Business` DIRECTO (sin envolver). `default_commission_rate` fuera de 0.10–0.40 se corrige en
+
+        silencio a 0.15 (no es error).
+
+        '
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessCreateRequest'
+            example:
+              name: Contrato Core Tienda
+              description: Tienda del contrato core
+              category: Pruebas
+              location: Tumaco
+      responses:
+        '201':
+          description: Negocio creado (pendiente de aprobación).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Business'
+              example:
+                id: 8
+                owner_id: 1
+                name: Contrato Core Tienda
+                slug: contrato-core-tienda
+                description: Tienda del contrato core
+                category: Pruebas
+                location: Tumaco
+                address: ''
+                latitude: 0
+                longitude: 0
+                image_url: ''
+                is_featured: false
+                is_approved: false
+                default_commission_rate: 0.15
+                monthly_limit: 0
+        '400':
+          description: Validación (`name`, `description`, `category`, `location` requeridos) o JSON mal formado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: 'Key: ''businessRequest.Description'' Error:Field validation for ''Description'' failed on the ''required''
+                  tag'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: El rol del token no es `business_owner`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: only business owners can create businesses
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /businesses/apply:
+    post:
+      tags:
+      - Negocios
+      operationId: applyBusiness
+      summary: Enviar solicitud de registro de negocio (KYC)
+      description: 'Requiere JWT; cualquier rol puede enviarla (el handler no valida rol). Crea una `BusinessApplication`
+        en estado
+
+        `pending`; la revisan los admins (`GET /admin/applications`). Solo se permite una solicitud `pending` por usuario
+
+        (si ya hay una responde 400 `you already have a pending application`).
+
+
+        Rareza: esta ruta es literal y convive con `/businesses/{id}`; Gin resuelve `apply` como ruta estática antes
+
+        que como `{id}`, pero `GET /businesses/apply` NO existe como lista (cae en `GET /businesses/{id}` → 400 `invalid business
+        id`).
+
+        '
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessApplyRequest'
+            example:
+              business_name: Contrato Core Negocio
+              category: Pruebas
+              description: Solicitud de contrato core
+              nequi_number: '3991110002'
+      responses:
+        '201':
+          description: Solicitud registrada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessApplyResponse'
+              example:
+                application:
+                  id: 1
+                  user_id: 23
+                  business_name: Contrato Core Negocio
+                  category: Pruebas
+                  description: Solicitud de contrato core
+                  nequi_number: '3991110002'
+                  document_image_url: ''
+                  status: pending
+                  rejection_reason: ''
+                  reviewed_by: null
+                  reviewed_at: null
+                  created_at: '2026-10-28T04:30:31.567471Z'
+                message: Application submitted. Review takes 24-48 hours.
+        '400':
+          description: Validación (campos requeridos, JSON mal formado) o ya existe una solicitud pendiente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                pendiente:
+                  value:
+                    error: you already have a pending application
+                validacion:
+                  value:
+                    error: 'Key: ''applyBusinessRequest.Category'' Error:Field validation for ''Category'' failed on the ''required''
+                      tag'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /businesses/{id}:
+    get:
+      tags:
+      - Negocios
+      operationId: getBusiness
+      summary: Detalle de negocio con sus productos
+      description: 'Público. Devuelve `{business, products}` (productos duplicados, ver `BusinessDetailResponse`).
+
+        INCONSISTENCIA: NO exige `is_approved` (un negocio pendiente se devuelve igual, con `products: []`) y devuelve
+
+        TODOS los productos, incluidos `is_active=false` e `is_exclusive=true`. Para el catálogo filtrado usar
+
+        `GET /businesses/{id}/products` o `GET /negocio/{slug}`.
+
+        '
+      parameters:
+      - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Negocio y productos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessDetailResponse'
+              example:
+                business:
+                  id: 3
+                  owner_id: 1
+                  name: Tienda de Prueba
+                  slug: tienda-de-prueba
+                  description: Descripción de prueba
+                  category: Ropa
+                  location: Tumaco
+                  address: Calle 10
+                  latitude: 1.801
+                  longitude: -78.76
+                  image_url: ''
+                  is_featured: false
+                  is_approved: false
+                  default_commission_rate: 0.15
+                  monthly_limit: 0
+                products: []
+        '400':
+          description: '`id` no numérico.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: invalid business id
+        '404':
+          description: Negocio inexistente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: business not found
+        '500':
+          $ref: '#/components/responses/ServerError'
+    patch:
+      tags:
+      - Negocios
+      operationId: patchBusiness
+      summary: Editar negocio propio
+      description: 'Requiere JWT con rol `business_owner` (403 en caso contrario) y ser el dueño (`owner_id`): si no, 403
+        `not your business`.
+
+        Actualización parcial: solo cambian los campos con valor (ver `BusinessPatchRequest`). Si cambia `name`, se
+
+        regenera `slug` (el slug anterior deja de funcionar en `/negocio/{slug}`). Devuelve el `Business` DIRECTO
+
+        recargado.
+
+
+        Rarezas reales: un JSON mal formado NO da 400 (el error de `ShouldBindJSON` se ignora y se responde 200 con
+
+        el negocio sin cambios); un cuerpo vacío tampoco falla. Puede editar negocios aún no aprobados.
+
+        '
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BusinessPatchRequest'
+            example:
+              description: Nueva desc core
+              default_commission_rate: 0.25
+      responses:
+        '200':
+          description: Negocio actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Business'
+              example:
+                id: 8
+                owner_id: 1
+                name: Contrato Core Tienda
+                slug: contrato-core-tienda
+                description: Nueva desc core
+                category: Pruebas
+                location: Tumaco
+                address: ''
+                latitude: 0
+                longitude: 0
+                image_url: ''
+                is_featured: false
+                is_approved: false
+                default_commission_rate: 0.25
+                monthly_limit: 0
+        '400':
+          description: '`id` no numérico.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: invalid id
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Rol distinto de `business_owner`, o el negocio es de otro dueño.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                rol:
+                  value:
+                    error: only business owners can edit businesses
+                ajeno:
+                  value:
+                    error: not your business
+        '404':
+          description: Negocio inexistente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: business not found
+  /businesses/{id}/products:
+    get:
+      tags:
+      - Negocios
+      - Productos
+      operationId: listBusinessProducts
+      summary: Productos activos de un negocio
+      description: 'Público con autenticación OPCIONAL. Mismo handler que `GET /products` con el filtro `business_id` tomado
+        de la ruta.
+
+        Solo `is_active = true`. Los productos `is_exclusive` se incluyen únicamente si el JWT enviado es de un usuario
+
+        con `plan = pro` vigente; un token inválido se ignora en silencio (se trata como anónimo, no da 401).
+
+        NO comprueba que el negocio exista ni esté aprobado: un `id` inexistente devuelve `{"products": []}` (200).
+
+        Un `id` no numérico NO da 400: la consulta SQL falla y responde 500 `failed to list products`.
+
+        Sin paginación.
+
+        '
+      security:
+      - {}
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/IdPath'
+      responses:
+        '200':
+          description: Productos del negocio.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductListResponse'
+              example:
+                products:
+                - id: 7
+                  business_id: 1
+                  name: Americano
+                  description: Café americano suave
+                  price: 3500
+                  stock: 200
+                  image_url: ''
+                  commission_rate: 0.15
+                  is_active: true
+                  is_exclusive: false
+        '500':
+          description: Error interno (incluye `id` no numérico en la ruta).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: failed to list products
+  /dashboard:
+    get:
+      tags:
+      - Dashboards
+      operationId: getBusinessDashboard
+      summary: Resumen simple de órdenes e ingresos por negocio
+      description: '**Rol: `business_owner`** (validado en el handler). Devuelve una fila por negocio del owner (aprobado
+        o no).
+
+        `orders`/`revenue` cuentan órdenes con status en (`pending`, `completed`, `delivered`): `pending` no es un status
+        real
+
+        (el real es `pending_payment`) y quedan fuera `paid`, `dispatched` e `in_transit`. Para métricas fiables usar
+
+        `GET /dashboard/business/stats`.
+
+        '
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Resumen por negocio.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessDashboardResponse'
+              example:
+                dashboard:
+                - business_id: 1
+                  name: Café La Esquina
+                  orders: 8
+                  revenue: 68000
+                - business_id: 2
+                  name: Artesanías Casa Nariño
+                  orders: 13
+                  revenue: 1525000
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No es business_owner.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: only business owners can view dashboard
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /dashboard/business/stats:
+    get:
+      tags:
+      - Dashboards
+      operationId: getBusinessDashboardStats
+      summary: Estadísticas del negocio por período
+      description: '**Rol: `business_owner`** (validado en el handler). Agrega TODOS los negocios del owner, solo órdenes
+        con
+
+        `payment_status = ''paid''`. Ventana: 30 días si `period=30d`; **cualquier otro valor (o ausente) usa 7 días**, y
+        `period`
+
+        se devuelve tal cual lo enviado (`?period=foo` => `"period": "foo"`).
+
+
+        Rarezas: (1) `top_freelancers[].commission_earned` siempre es 0 (defecto de mapeo GORM). (2) Con negocios pero sin
+        ventas los
+
+        arrays pueden venir `null`. (3) Si el owner no tiene negocios la respuesta omite `period` y trae arrays vacíos.
+
+        (4) `day` es un datetime a medianoche UTC, no `YYYY-MM-DD`.
+
+        '
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: period
+        in: query
+        required: false
+        description: '`7d` (default) o `30d`. Otros valores se aceptan sin error y equivalen a 7 días.'
+        schema:
+          type: string
+          enum:
+          - 7d
+          - 30d
+          default: 7d
+      responses:
+        '200':
+          description: Estadísticas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessDashboardStatsResponse'
+              example:
+                period: 7d
+                sales_by_day:
+                - day: '2026-10-28T00:00:00Z'
+                  orders: 23
+                  revenue: 1948500
+                top_products:
+                - product_id: 4
+                  product_name: Hamaca Artesanal
+                  quantity_sold: 7
+                  revenue: 840000
+                - product_id: 1
+                  product_name: Espresso Doble
+                  quantity_sold: 7
+                  revenue: 31500
+                top_freelancers:
+                - freelancer_id: 3
+                  freelancer_name: María García
+                  sales: 7
+                  commission_earned: 0
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No es business_owner.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: only business owners can view stats
+  /dashboard/freelancer:
+    get:
+      tags:
+      - Dashboards
+      operationId: getFreelancerDashboard
+      summary: Ingresos y top productos del comisionista por período
+      description: '**Rol: `freelancer`** (validado en el handler; un business_owner recibe 403). Solo órdenes con `payment_status
+        = ''paid''`
+
+        del comisionista. Ventana: 30 días si `period=30d`; **cualquier otro valor usa 7 días** y `period` se devuelve tal
+        cual
+
+        se envió. Sin ventas, `earnings_by_day` y `top_products` llegan como `null` (no `[]`). `day` es medianoche UTC en
+        formato date-time.
+
+        '
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: period
+        in: query
+        required: false
+        description: '`7d` (default) o `30d`. Otros valores se aceptan sin error y equivalen a 7 días.'
+        schema:
+          type: string
+          enum:
+          - 7d
+          - 30d
+          default: 7d
+      responses:
+        '200':
+          description: Dashboard del comisionista.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FreelancerDashboardResponse'
+              examples:
+                withSales:
+                  value:
+                    balance: 18000
+                    earnings_by_day:
+                    - day: '2026-10-28T00:00:00Z'
+                      sales: 1
+                      earnings: 24000
+                    period: 30d
+                    period_total: 24000
+                    top_products:
+                    - product_id: 4
+                      product_name: Hamaca Artesanal
+                      sales: 1
+                      earned: 24000
+                noSales:
+                  value:
+                    balance: 0
+                    earnings_by_day: null
+                    period: 7d
+                    period_total: 0
+                    top_products: null
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No es freelancer.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: only freelancers can view this dashboard
+  /health:
+    get:
+      tags:
+      - Health
+      operationId: getHealth
+      summary: Estado del servicio
+      description: Sin autenticación. Solo responde `GET` (cualquier otro método devuelve el 404 de texto plano de Gin, no
+        JSON).
+      responses:
+        '200':
+          description: Servicio arriba.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: ok
+  /me:
+    get:
+      tags:
+      - Usuario
+      operationId: getMe
+      summary: Perfil del usuario autenticado
+      description: 'Requiere JWT (cualquier rol). Devuelve `{ "user": {...} }` con solo algunos campos de `User` poblados
+
+        (ver `MeResponse`). Si el usuario fue borrado tras emitir el token, el handler no lo detecta y devuelve 200
+
+        con un `user` en ceros (no verificado en vivo, deducido del código: el resultado de `First` se ignora).
+
+        '
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Usuario actual.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+              example:
+                user:
+                  id: 1
+                  name: Juan Pérez
+                  email: juan@example.com
+                  role: business_owner
+                  username: juan
+                  document_id: ''
+                  phone: ''
+                  nequi_number: ''
+                  is_verified: true
+                  plan: free
+                  plan_expires_at: null
+                  earnings_balance: 0
+                  referral_code: ''
+                  referred_by: null
+        '401':
+          description: Sin token, cabecera mal formada o token inválido/expirado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                sinToken:
+                  value:
+                    error: authorization required
+                cabecera:
+                  value:
+                    error: invalid authorization header
+                token:
+                  value:
+                    error: invalid or expired token
+    patch:
+      tags:
+      - Usuario
+      operationId: updateMe
+      summary: Editar el perfil propio (pantalla Ajustes)
+      description: 'Añadido en v1.1 (aditivo). Requiere JWT (cualquier rol). Devuelve `{ "user": {...} }` igual que `GET /me`.
+
+        Errores 400: `name must have between 2 and 80 characters`, `invalid phone`, `phone number already registered`,
+
+        `invalid nequi_number (10 digits)`, `invalid document_id`.
+
+        '
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMeRequest'
+            example:
+              name: Manuel Angulo
+              nequi_number: '3001234567'
+      responses:
+        '200':
+          description: Perfil actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /me/businesses:
+    get:
+      tags:
+      - Usuario
+      - Negocios
+      operationId: listMyBusinesses
+      summary: Negocios del usuario autenticado
+      description: 'Requiere JWT. Devuelve los negocios cuyo `owner_id` es el usuario, aprobados o no. Cualquier rol puede
+        llamarlo;
+
+        si no es dueño de ninguno devuelve `{"businesses": []}` (200).
+
+        '
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Negocios propios.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessListResponse'
+              example:
+                businesses:
+                - id: 1
+                  owner_id: 1
+                  name: Café La Esquina
+                  slug: cafe-la-esquina
+                  description: Café artesanal con especialidad en espressos
+                  category: Café
+                  location: Centro Histórico
+                  address: Calle Principal 123
+                  latitude: 1.7989
+                  longitude: -78.7628
+                  image_url: https://images.unsplash.com/photo-1495521821757-a1efb6729352?w=400
+                  is_featured: true
+                  is_approved: true
+                  default_commission_rate: 0.15
+                  monthly_limit: 0
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /negocio/{slug}:
+    get:
+      tags:
+      - Negocios
+      operationId: getBusinessPublicProfile
+      summary: Perfil público de un negocio por slug
+      description: 'Público, sin autenticación. Solo negocios `is_approved = true` (uno pendiente da 404, a diferencia de
+
+        `GET /businesses/{id}`). Devuelve `{business, products, stats, slug}` con los productos `is_active`
+
+        (incluye los exclusivos Pro: aquí NO se filtra por plan) y estadísticas de órdenes pagadas.
+
+        Cambiar el nombre del negocio (`PATCH /businesses/{id}`) cambia su slug.
+
+        '
+      parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+        example: cafe-la-esquina
+      responses:
+        '200':
+          description: Perfil público.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BusinessPublicProfileResponse'
+              example:
+                business:
+                  id: 1
+                  owner_id: 1
+                  name: Café La Esquina
+                  slug: cafe-la-esquina
+                  description: Café artesanal con especialidad en espressos
+                  category: Café
+                  location: Centro Histórico
+                  address: Calle Principal 123
+                  latitude: 1.7989
+                  longitude: -78.7628
+                  image_url: https://images.unsplash.com/photo-1495521821757-a1efb6729352?w=400
+                  is_featured: true
+                  is_approved: true
+                  default_commission_rate: 0.15
+                  monthly_limit: 0
+                products:
+                - id: 7
+                  business_id: 1
+                  name: Americano
+                  description: Café americano suave
+                  price: 3500
+                  stock: 200
+                  image_url: ''
+                  commission_rate: 0.15
+                  is_active: true
+                  is_exclusive: false
+                stats:
+                  total_orders: 7
+                  total_revenue: 63500
+                slug: cafe-la-esquina
+        '404':
+          description: Slug inexistente o negocio no aprobado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: business not found
+  /payments:
+    get:
+      tags:
+      - Pagos
+      operationId: listMyPayments
+      summary: Mis pagos (historial de Wompi mapeado a pedidos)
+      description: '`scope=mine` (por defecto): pagos que hizo el usuario como comprador. `scope=received`: solo `business_owner`;
+        pagos de
+
+        pedidos de sus negocios, **sin datos personales del pagador**. Otro rol con `scope=received` → 403.
+
+        Orden: más reciente primero. `limit` 1–100 (50 por defecto), `offset` ≥ 0.
+
+        '
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: scope
+        in: query
+        schema:
+          type: string
+          enum:
+          - mine
+          - received
+      - name: limit
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - name: offset
+        in: query
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      responses:
+        '200':
+          description: Pagos visibles para el usuario.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /payments/wompi/sync:
+    post:
+      tags:
+      - Pagos
+      operationId: syncWompiPayment
+      summary: Verificar con Wompi los pagos pendientes de una orden
+      description: 'Se llama al volver del checkout. El **servidor** consulta a Wompi (llave privada) y aplica el resultado;
+        el cliente nunca
+
+        decide el estado. Solo el comprador de la orden (otro usuario → 403). Máximo una consulta por orden cada 5 s (429).
+
+        503 si el servidor no tiene verificación configurada o Wompi no responde.
+
+        '
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SyncPaymentRequest'
+      responses:
+        '200':
+          description: Estado actual de la orden y de sus pagos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncPaymentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          description: Demasiadas verificaciones seguidas de la misma orden.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          description: Verificación no configurada o Wompi no disponible.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /payments/{reference}:
+    get:
+      tags:
+      - Pagos
+      operationId: getMyPayment
+      summary: Detalle de un pago y su línea de tiempo
+      description: 'La referencia debe cumplir `[A-Za-z0-9_-]{1,64}` (si no, 400). Si el pago no existe **o no es del usuario**
+        responde 404
+
+        (no se revela su existencia). Acepta `scope=received` igual que `/payments`.
+
+        '
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: reference
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^[A-Za-z0-9_-]{1,64}$
+      - name: scope
+        in: query
+        schema:
+          type: string
+          enum:
+          - mine
+          - received
+      responses:
+        '200':
+          description: Pago y cambios de estado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentDetailResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /products:
+    get:
+      tags:
+      - Productos
+      operationId: listProducts
+      summary: Listar productos activos
+      description: 'Público con autenticación OPCIONAL (igual que `GET /businesses/{id}/products`). Solo `is_active = true`;
+
+        los `is_exclusive` solo para usuarios con plan Pro vigente. No exige que el negocio esté aprobado.
+
+        Sin paginación. El filtro `business_id` no numérico produce 500 (fallo SQL), no 400.
+
+        '
+      security:
+      - {}
+      - bearerAuth: []
+      parameters:
+      - name: business_id
+        in: query
+        required: false
+        schema:
+          type: integer
+          format: int64
+        description: Filtra por negocio (sin validar que exista).
+      responses:
+        '200':
+          description: Productos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductListResponse'
+              example:
+                products:
+                - id: 3
+                  business_id: 1
+                  name: Latte Macchiato
+                  description: Latte con arte decorativo
+                  price: 6000
+                  stock: 79
+                  image_url: https://images.unsplash.com/photo-1461023058943-07fcbe16d735?w=300
+                  commission_rate: 0.15
+                  is_active: true
+                  is_exclusive: false
+        '500':
+          description: Error interno (incluye `business_id` no numérico).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: failed to list products
+    post:
+      tags:
+      - Productos
+      operationId: createProduct
+      summary: Crear producto
+      description: 'Requiere JWT con rol `business_owner`, dueño del negocio `business_id`, y negocio YA aprobado.
+
+        El producto nace con `is_active = true`. Devuelve el `Product` DIRECTO.
+
+
+        Orden de comprobación (importa para el código): rol (403) → validación del cuerpo (400) → negocio existe (404)
+
+        → es del usuario (403) → está aprobado (403 `business is not approved yet`) → `commission_rate` en rango (400).
+
+        `stock: 0` y `price: 0` son rechazados por `binding:"required"` (400), ver `ProductCreateRequest`.
+
+        Si `commission_rate` falta/0 se hereda `default_commission_rate` del negocio.
+
+        '
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductCreateRequest'
+            example:
+              business_id: 1
+              name: Contrato Core Producto
+              description: Producto contrato core
+              price: 1000
+              stock: 3
+      responses:
+        '201':
+          description: Producto creado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+              example:
+                id: 27
+                business_id: 1
+                name: Contrato Core Producto
+                description: Producto contrato core
+                price: 1000
+                stock: 3
+                image_url: ''
+                commission_rate: 0.15
+                is_active: true
+                is_exclusive: false
+        '400':
+          description: Validación del cuerpo, JSON mal formado o `commission_rate` fuera de 0.10–0.40.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                validacion:
+                  value:
+                    error: 'Key: ''productRequest.Stock'' Error:Field validation for ''Stock'' failed on the ''required''
+                      tag'
+                comision:
+                  value:
+                    error: commission_rate must be between 10% and 40%
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Rol distinto de `business_owner`, negocio de otro dueño, o negocio sin aprobar.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                rol:
+                  value:
+                    error: only business owners can create products
+                ajeno:
+                  value:
+                    error: you can only add products to your own business
+                sinAprobar:
+                  value:
+                    error: business is not approved yet
+        '404':
+          description: El negocio `business_id` no existe.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: business not found
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /products/{id}:
+    patch:
+      tags:
+      - Productos
+      operationId: patchProduct
+      summary: Activar/desactivar producto propio
+      description: 'Requiere JWT con rol `business_owner` y ser dueño del negocio del producto. SOLO permite cambiar `is_active`
+
+        (otros campos del cuerpo se ignoran: no hay forma de editar precio, stock o nombre). Al cambiar `is_active`
+
+        se sincronizan los `ReferralLink` del producto. Devuelve el `Product` DIRECTO.
+
+        Un cuerpo vacío (sin JSON) da 400 (EOF), pero `{}` es válido y devuelve 200 sin cambios.
+
+        Orden: rol (403) → `id` numérico (400) → cuerpo JSON (400) → producto existe (404) → ownership (403).
+
+        '
+      security:
+      - bearerAuth: []
+      parameters:
+      - $ref: '#/components/parameters/IdPath'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductPatchRequest'
+            example:
+              is_active: false
+      responses:
+        '200':
+          description: Producto actualizado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+              example:
+                id: 27
+                business_id: 1
+                name: Contrato Core Producto
+                description: Producto contrato core
+                price: 1000
+                stock: 3
+                image_url: ''
+                commission_rate: 0.15
+                is_active: false
+                is_exclusive: false
+        '400':
+          description: '`id` no numérico o JSON inválido/ausente.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                id:
+                  value:
+                    error: invalid product id
+                json:
+                  value:
+                    error: invalid character 'b' looking for beginning of value
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Rol distinto de `business_owner` o el producto es de otro dueño.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                rol:
+                  value:
+                    error: only business owners can update products
+                ajeno:
+                  value:
+                    error: you can only update your own products
+        '404':
+          description: Producto inexistente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: product not found
+  /r/{slug}:
+    get:
+      tags:
+      - Referidos
+      operationId: trackReferralClick
+      summary: Resolver un link de referido (registra un click)
+      description: '**Público. GET CON EFECTO SECUNDARIO:** cada llamada válida inserta un `ReferralClick` (IP + User-Agent)
+        e incrementa
+
+        `clicks` del link (sin deduplicar; ni caché ni prefetch son seguros). Verificado: 2 llamadas => `clicks: 2`.
+
+
+        **No redirige:** responde 200 con JSON del producto; el frontend decide a dónde navegar. Los dos 400 llevan el mismo
+        mensaje
+
+        (link inactivo y producto inactivo) y no registran click. La ruta del navegador del web es `/r/{slug}` (APP_BASE_URL),
+        pero
+
+        este endpoint vive en el API. Con el seed: `hamaca-casa-narino-maria-x7k2`.
+
+        '
+      parameters:
+      - name: slug
+        in: path
+        required: true
+        schema:
+          type: string
+        example: hamaca-casa-narino-maria-x7k2
+      responses:
+        '200':
+          description: Producto asociado; click registrado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellReferralClickResponse'
+              example:
+                business_id: 2
+                product:
+                  id: 4
+                  business_id: 2
+                  name: Hamaca Artesanal
+                  description: Hamaca tejida a mano, colores del Pacífico
+                  price: 120000
+                  stock: 13
+                  image_url: https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=300
+                  commission_rate: 0.2
+                  is_active: true
+                  is_exclusive: false
+                referral_link_id: 1
+        '400':
+          description: El link o su producto están inactivos (mismo mensaje en ambos casos; no verificado en vivo, por lectura
+            del código).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: product is no longer available
+        '404':
+          description: Slug inexistente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: link not found
+  /sell/affiliate:
+    post:
+      tags:
+      - Comisionistas
+      operationId: sellAffiliate
+      summary: Afiliarse a un producto y obtener el link de referido
+      description: '**Rol: `freelancer`** (se valida dentro del handler, ANTES de leer el body: un no-freelancer con body
+        inválido recibe 403).
+
+
+        Orden de validación real: rol (403) → JSON/`product_id` (400) → producto existe (404) → producto activo (400) →
+
+        si `is_exclusive`, plan Pro vigente (403) → ¿ya existe un link activo para ese comisionista × producto? (200).
+
+
+        Respuesta con **dos formas**: 201 (link nuevo; trae `url`, sin `message`) y 200 (ya afiliado; trae `message`, sin
+        `url`).
+
+        El slug es `<nombre-normalizado>-<userId>-<4 chars aleatorios>` (se eliminan tildes/ñ: "Cappuccino Clásico" => `cappuccino-clsico-…`).
+
+        `referral_link.freelancer` y `.product` vienen con ceros (no precargados).
+
+        El 403 de plan Pro y el 400 de producto inactivo no se pudieron verificar en vivo (la semilla no tiene productos exclusivos
+
+        ni inactivos); se documentan por lectura del código.
+
+        '
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SellAffiliateRequest'
+            example:
+              product_id: 4
+      responses:
+        '201':
+          description: Link creado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellAffiliateResponse'
+              example:
+                referral_link:
+                  id: 16
+                  freelancer_id: 24
+                  freelancer:
+                    id: 0
+                    name: ''
+                    email: ''
+                    role: ''
+                    username: ''
+                    document_id: ''
+                    phone: ''
+                    nequi_number: ''
+                    is_verified: false
+                    plan: ''
+                    plan_expires_at: null
+                    earnings_balance: 0
+                    referral_code: ''
+                    referred_by: null
+                  product_id: 4
+                  product:
+                    id: 0
+                    business_id: 0
+                    name: ''
+                    description: ''
+                    price: 0
+                    stock: 0
+                    image_url: ''
+                    commission_rate: 0
+                    is_active: false
+                    is_exclusive: false
+                  business_id: 2
+                  slug: hamaca-artesanal-24-kgz1
+                  clicks: 0
+                  conversions: 0
+                  is_active: true
+                  created_at: '2026-10-28T04:30:32.943669797Z'
+                url: http://localhost:3000/r/hamaca-artesanal-24-kgz1
+        '200':
+          description: El comisionista ya tenía un link activo para ese producto (se devuelve el existente, sin `url`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellAffiliateResponse'
+              example:
+                message: already affiliated
+                referral_link:
+                  id: 16
+                  freelancer_id: 24
+                  freelancer:
+                    id: 0
+                    name: ''
+                    email: ''
+                    role: ''
+                    username: ''
+                    document_id: ''
+                    phone: ''
+                    nequi_number: ''
+                    is_verified: false
+                    plan: ''
+                    plan_expires_at: null
+                    earnings_balance: 0
+                    referral_code: ''
+                    referred_by: null
+                  product_id: 4
+                  product:
+                    id: 0
+                    business_id: 0
+                    name: ''
+                    description: ''
+                    price: 0
+                    stock: 0
+                    image_url: ''
+                    commission_rate: 0
+                    is_active: false
+                    is_exclusive: false
+                  business_id: 2
+                  slug: hamaca-artesanal-24-kgz1
+                  clicks: 0
+                  conversions: 0
+                  is_active: true
+                  created_at: '2026-10-28T04:30:32.943669Z'
+        '400':
+          description: 'Body inválido (mensaje crudo de gin/Go) o producto inactivo (`product is not active`).
+
+            '
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                missingProductId:
+                  value:
+                    error: 'Key: ''affiliateRequest.ProductID'' Error:Field validation for ''ProductID'' failed on the ''required''
+                      tag'
+                wrongType:
+                  value:
+                    error: 'json: cannot unmarshal string into Go struct field affiliateRequest.product_id of type uint'
+                malformedJson:
+                  value:
+                    error: unexpected EOF
+                inactiveProduct:
+                  value:
+                    error: product is not active
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No es freelancer (`only freelancers can affiliate to products`) o el producto es exclusivo y no tiene
+            Pro vigente (`this product requires a Pro plan`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                notFreelancer:
+                  value:
+                    error: only freelancers can affiliate to products
+                requiresPro:
+                  value:
+                    error: this product requires a Pro plan
+        '404':
+          description: Producto inexistente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: product not found
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /sell/links:
+    get:
+      tags:
+      - Comisionistas
+      operationId: sellListLinks
+      summary: Listar los links de referido activos del comisionista
+      description: '**Rol: `freelancer`** (validado en el handler).
+
+        Solo links con `is_active = true`. Cada link incluye `product` precargado, `freelancer` con ceros y un campo `url`
+
+        adicional (`APP_BASE_URL` + `/r/` + slug; en local `http://localhost:3000`). Sin links => `links: []` (no `null`).
+
+        '
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Links y saldo.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellLinksResponse'
+              example:
+                earnings_balance: 24000
+                links:
+                - id: 16
+                  freelancer_id: 24
+                  freelancer:
+                    id: 0
+                    name: ''
+                    email: ''
+                    role: ''
+                    username: ''
+                    document_id: ''
+                    phone: ''
+                    nequi_number: ''
+                    is_verified: false
+                    plan: ''
+                    plan_expires_at: null
+                    earnings_balance: 0
+                    referral_code: ''
+                    referred_by: null
+                  product_id: 4
+                  product:
+                    id: 4
+                    business_id: 2
+                    name: Hamaca Artesanal
+                    description: Hamaca tejida a mano, colores del Pacífico
+                    price: 120000
+                    stock: 13
+                    image_url: https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=300
+                    commission_rate: 0.2
+                    is_active: true
+                    is_exclusive: false
+                  business_id: 2
+                  slug: hamaca-artesanal-24-kgz1
+                  clicks: 0
+                  conversions: 1
+                  is_active: true
+                  created_at: '2026-10-28T04:30:32.943669Z'
+                  url: http://localhost:3000/r/hamaca-artesanal-24-kgz1
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No es freelancer.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: only freelancers can view their links
+  /sell/movements:
+    get:
+      tags:
+      - Comisionistas
+      operationId: sellMovements
+      summary: Movimientos del comisionista (comisiones liberadas y retiros)
+      description: 'Añadido en v1.1 (aditivo). Solo rol `freelancer` (otros: 403). Mezcla las comisiones ya liberadas (`amount`
+        > 0)
+
+        y las solicitudes de retiro (`amount` < 0), de la más reciente a la más antigua, máximo 100.
+
+        '
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Movimientos.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MovementsResponse'
+              example:
+                movements:
+                - type: withdrawal
+                  title: Retiro a tu cuenta
+                  amount: -5000
+                  status: pending
+                  created_at: '2026-11-24T10:00:00Z'
+                - type: commission
+                  title: Comisión por venta
+                  amount: 24000
+                  status: released
+                  order_id: 31
+                  created_at: '2026-11-24T09:00:00Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /sell/referral-code:
+    get:
+      tags:
+      - Referidos
+      operationId: sellGetReferralCode
+      summary: Código de referido del usuario para invitar a otros
+      description: '**Cualquier usuario autenticado** (no valida rol, a diferencia del resto de `/sell/*`; verificado con
+        un `customer`).
+
+        `bonus_per_referral` es una constante (5000) fija en el handler.
+
+        '
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Código y enlace de invitación.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellReferralCodeResponse'
+              example:
+                bonus_per_referral: 5000
+                referral_code: testLC9E3D
+                referral_url: http://localhost:3000/signup?ref=testLC9E3D
+                referred_count: 0
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /sell/stats:
+    get:
+      tags:
+      - Comisionistas
+      operationId: sellGetStats
+      summary: Estadísticas avanzadas por link (solo plan Pro)
+      description: '**Rol: `freelancer`** y **plan Pro vigente** (`plan = ''pro''` y `plan_expires_at` nulo o futuro). Ambos
+        fallos devuelven 403
+
+        con mensajes distintos. Solo links activos. `earned_total` es una estimación (conversiones × precio actual × tasa
+        actual),
+
+        no lo realmente cobrado. `plan_expires` es `null` si el Pro no tiene vencimiento.
+
+        '
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Estadísticas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellStatsResponse'
+              example:
+                links:
+                - slug: hamaca-artesanal-24-kgz1
+                  product_name: Hamaca Artesanal
+                  clicks: 2
+                  conversions: 1
+                  conversion_rate_pct: 50
+                  earned_total: 24000
+                plan_expires: '2026-11-27T04:30:57.440384Z'
+                total_balance: 18000
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No es freelancer o no tiene plan Pro vigente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                notFreelancer:
+                  value:
+                    error: only freelancers can view stats
+                requiresPro:
+                  value:
+                    error: advanced stats require Pro plan
+  /sell/upgrade-pro:
+    post:
+      tags:
+      - Comisionistas
+      operationId: sellUpgradePro
+      summary: Activar el plan Pro por 30 días
+      description: '**Rol: `freelancer`**. Sin body.
+
+
+        **Comportamiento mock/actual:** NO cobra nada (el comentario del código dice que en producción serían $15.000 vía
+        Wompi, aún sin implementar):
+
+        activa el plan directamente. Es repetible: cada llamada fija `plan_expires_at = ahora + 30 días` (sobrescribe, no
+        extiende).
+
+        '
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Plan activado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellUpgradeProResponse'
+              example:
+                message: Plan Pro activado por 30 días
+                plan: pro
+                plan_expires_at: '2026-11-27T04:30:57.440384053Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No es freelancer.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: only freelancers can upgrade to Pro
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /sell/withdraw:
+    post:
+      tags:
+      - Comisionistas
+      operationId: sellWithdraw
+      summary: Solicitar retiro del saldo a Nequi
+      description: '**Rol: `freelancer`** (validado ANTES del body).
+
+
+        Orden de validación real: rol (403) → body (400; `amount` `required,gt=0` y `nequi_number` `required`) →
+
+        **saldo suficiente** (400 `insufficient balance` + campo extra `balance`) → **mínimo 5000 COP** (400).
+
+        Consecuencia: con saldo 0 y `amount: 3000` se responde `insufficient balance`, no el mínimo.
+
+
+        Efecto: descuenta el saldo inmediatamente y crea un `WithdrawalRequest` en estado `pending` (lo procesa un admin en
+
+        `PATCH /admin/withdrawals/process/{id}`). No usa transacción: el descuento y la creación son pasos separados (con
+        reversión
+
+        manual si falla la creación).
+
+        '
+      security:
+      - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SellWithdrawRequest'
+            example:
+              amount: 6000
+              nequi_number: '3009990001'
+      responses:
+        '201':
+          description: Solicitud creada.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellWithdrawResponse'
+              example:
+                message: Withdrawal request created. Processing in 1-2 business days.
+                remaining_balance: 18000
+                withdrawal:
+                  id: 3
+                  freelancer_id: 24
+                  amount: 6000
+                  nequi_number: '3009990001'
+                  status: pending
+                  processed_at: null
+                  notes: ''
+                  created_at: '2026-10-28T04:30:57.404653249Z'
+        '400':
+          description: 'Body inválido (mensaje crudo del validador), saldo insuficiente (con `balance`) o monto menor a 5000.
+
+            '
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/Error'
+                - $ref: '#/components/schemas/SellInsufficientBalanceError'
+              examples:
+                missingNequi:
+                  value:
+                    error: 'Key: ''withdrawalRequest.NequiNumber'' Error:Field validation for ''NequiNumber'' failed on the
+                      ''required'' tag'
+                zeroAmount:
+                  value:
+                    error: 'Key: ''withdrawalRequest.Amount'' Error:Field validation for ''Amount'' failed on the ''required''
+                      tag'
+                negativeAmount:
+                  value:
+                    error: 'Key: ''withdrawalRequest.Amount'' Error:Field validation for ''Amount'' failed on the ''gt'' tag'
+                insufficientBalance:
+                  value:
+                    error: insufficient balance
+                    balance: 24000
+                belowMinimum:
+                  value:
+                    error: minimum withdrawal is $5.000 COP
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: No es freelancer.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: only freelancers can request withdrawals
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /vendedor/{username}:
+    get:
+      tags:
+      - Comisionistas
+      operationId: getFreelancerStorefront
+      summary: Vitrina pública de un comisionista
+      description: '**Público.** Busca `username` EXACTO (distingue mayúsculas) con `role = ''freelancer''`: un username de
+        otro rol responde 404
+
+        igual que uno inexistente. Lista sus links activos cuyo producto está activo, con `referral_url` (`APP_BASE_URL` +
+        `/r/` + slug).
+
+        Sin productos => `products: []`. No expone email, saldo ni plan.
+
+        '
+      parameters:
+      - name: username
+        in: path
+        required: true
+        schema:
+          type: string
+        example: maria
+      responses:
+        '200':
+          description: Perfil y productos del comisionista.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SellStorefrontResponse'
+              example:
+                freelancer:
+                  name: Test Sell
+                  username: testsell
+                products:
+                - id: 4
+                  name: Hamaca Artesanal
+                  description: Hamaca tejida a mano, colores del Pacífico
+                  price: 120000
+                  image_url: https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=300
+                  commission_rate: 0.2
+                  referral_slug: hamaca-artesanal-24-kgz1
+                  referral_url: http://localhost:3000/r/hamaca-artesanal-24-kgz1
+        '404':
+          description: Comisionista inexistente (o el username no pertenece a un freelancer).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                error: freelancer not found

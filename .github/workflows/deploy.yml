@@ -1,9 +1,28 @@
 name: Deploy Mano App
 
+# Despliegue MANUAL a la VM de Azure (Actions → Deploy Mano App → Run workflow).
+# NO se dispara con `push`: así un merge a main nunca despliega solo (decisión de la migración, F0.3).
+# Despliega el commit EXACTO desde el que se lanza el workflow (imágenes etiquetadas con su SHA), hace respaldo de la
+# base de datos antes, verifica que el backend quede sano y, si no, vuelve a la versión anterior.
+#
+# Antes de la primera vez (una sola vez, ver docs/DEPLOY.md):
+#   · Secrets:   GHCR_TOKEN (PAT con read:packages) · AZURE_SSH_KEY (llave privada)  — o AZURE_VM_PASSWORD si aún usas contraseña
+#   · Variables: AZURE_VM_HOST · AZURE_VM_USER · (opcional) APP_URL = https://tu-dominio  → chequeo externo al terminar
+#   · Opcional:  secret AZURE_VM_FINGERPRINT (huella SHA256 del host SSH) para no confiar a ciegas en el servidor
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Escribe DEPLOY para confirmar el despliegue a la VM de Azure'
+        required: true
+        default: ''
+
+concurrency:
+  group: deploy-azure
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 env:
   REGISTRY: ghcr.io
@@ -11,8 +30,19 @@ env:
   FRONTEND_IMAGE: ghcr.io/${{ github.repository_owner }}/mano-frontend
 
 jobs:
-  # ── 1. Verificar que compila ────────────────────────────────────────────────
+  # ── 0. Confirmación escrita (evita despliegues por un clic accidental) ───────
+  confirm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verificar confirmación
+        if: ${{ github.event.inputs.confirm != 'DEPLOY' }}
+        run: |
+          echo "::error::Para desplegar escribe exactamente DEPLOY en el campo 'confirm'."
+          exit 1
+
+  # ── 1. Verificar que compila y pasa las pruebas ──────────────────────────────
   test:
+    needs: confirm
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,9 +52,12 @@ jobs:
           go-version: '1.22'
           cache-dependency-path: backend/go.sum
 
-      - name: Build backend
+      - name: Backend (vet + build + test)
         working-directory: backend
-        run: go build ./...
+        run: |
+          go vet ./...
+          go build ./...
+          go test ./...
 
       - uses: actions/setup-node@v4
         with:
@@ -32,11 +65,14 @@ jobs:
           cache: 'npm'
           cache-dependency-path: web/package-lock.json
 
-      - name: TypeScript check
+      - name: Web (tsc)
         working-directory: web
-        run: npm ci && npx tsc --noEmit
+        run: npm ci && npx tsc --noEmit --incremental false
 
-  # ── 2. Build y push imágenes a GHCR ────────────────────────────────────────
+      - name: Imágenes del diseñador intactas
+        run: bash scripts/verify-design-assets.sh
+
+  # ── 2. Build y push de imágenes a GHCR (tag = SHA del commit) ────────────────
   build:
     needs: test
     runs-on: ubuntu-latest
@@ -78,45 +114,92 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ── 3. Deploy a Azure VM ────────────────────────────────────────────────────
+  # ── 3. Deploy a la VM de Azure ───────────────────────────────────────────────
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    environment: production   # permite exigir aprobación manual en Settings → Environments
 
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Deploy via SSH a Azure VM
+      - name: Deploy por SSH
         uses: appleboy/ssh-action@v1
+        env:
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          DEPLOY_SHA: ${{ github.sha }}
         with:
-          host: ${{ vars.AZURE_VM_HOST }}
-          username: ${{ vars.AZURE_VM_USER }}
-          password: ${{ vars.AZURE_VM_PASSWORD }}
+          host: ${{ secrets.AZURE_VM_HOST || vars.AZURE_VM_HOST }}
+          username: ${{ secrets.AZURE_VM_USER || vars.AZURE_VM_USER }}
+          key: ${{ secrets.AZURE_SSH_KEY }}
+          password: ${{ secrets.AZURE_VM_PASSWORD }}
+          fingerprint: ${{ secrets.AZURE_VM_FINGERPRINT }}
+          envs: GHCR_TOKEN,GHCR_USER,DEPLOY_SHA
+          script_stop: true
           script: |
-            set -e
+            bash -s <<'REMOTE'
+            set -euo pipefail
             cd /opt/mano-app
+            COMPOSE="docker compose -f docker-compose.prod.yml"
 
-            # Actualizar archivos de compose y nginx
-            git pull origin main
+            echo "▶ 1/6 Comprobando el .env del servidor"
+            [ -f .env ] || { echo "❌ Falta /opt/mano-app/.env (ver docs/DEPLOY.md)"; exit 1; }
+            for v in GITHUB_OWNER POSTGRES_USER POSTGRES_PASSWORD REDIS_PASSWORD JWT_SECRET APP_BASE_URL DOMAIN; do
+              grep -qE "^${v}=.+" .env || { echo "❌ Falta ${v} en .env"; exit 1; }
+            done
+            JWT_LEN=$(grep -E '^JWT_SECRET=' .env | cut -d= -f2- | tr -d '\r' | wc -c)
+            [ "$JWT_LEN" -ge 33 ] || { echo "❌ JWT_SECRET debe tener al menos 32 caracteres"; exit 1; }
 
-            # Login a GHCR
-            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            echo "▶ 2/6 Código exacto del commit ${DEPLOY_SHA}"
+            git fetch --prune origin
+            git checkout --force "${DEPLOY_SHA}"
 
-            # Exportar variables
-            export BACKEND_IMAGE=${{ env.BACKEND_IMAGE }}
-            export FRONTEND_IMAGE=${{ env.FRONTEND_IMAGE }}
-            export IMAGE_TAG=${{ github.sha }}
+            echo "▶ 3/6 Respaldo de la base de datos"
+            envget() { grep -E "^$1=" .env | head -1 | cut -d= -f2- | tr -d '\r'; }
+            PGUSER_ENV=$(envget POSTGRES_USER); PGDB_ENV=$(envget POSTGRES_DB); PGDB_ENV=${PGDB_ENV:-mano}
+            mkdir -p /opt/mano-backups
+            if $COMPOSE ps --status running --services 2>/dev/null | grep -qx postgres; then
+              $COMPOSE exec -T postgres pg_dump -U "${PGUSER_ENV}" "${PGDB_ENV}" | gzip > "/opt/mano-backups/mano-$(date +%Y%m%d-%H%M%S)-${DEPLOY_SHA:0:7}.sql.gz"
+              ls -1t /opt/mano-backups/*.sql.gz 2>/dev/null | tail -n +15 | xargs -r rm -f
+              echo "   respaldo guardado en /opt/mano-backups"
+            else
+              echo "   (postgres aún no corre: primer despliegue, no hay nada que respaldar)"
+            fi
 
-            # Pull nuevas imágenes
-            docker pull ${{ env.BACKEND_IMAGE }}:latest
-            docker pull ${{ env.FRONTEND_IMAGE }}:latest
+            echo "▶ 4/6 Descargando imágenes"
+            PREV_TAG=$(cat .last_good_tag 2>/dev/null || echo latest)
+            echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
+            export IMAGE_TAG="${DEPLOY_SHA}"
+            $COMPOSE pull backend frontend
 
-            # Restart sin downtime
-            docker compose -f docker-compose.prod.yml up -d --no-deps --pull always backend
-            sleep 15
-            docker compose -f docker-compose.prod.yml up -d --no-deps --pull always frontend
+            echo "▶ 5/6 Levantando servicios"
+            $COMPOSE up -d --remove-orphans
 
-            # Limpiar imágenes viejas
-            docker image prune -f
+            echo "▶ 6/6 Verificando que el backend quede sano"
+            OK=0
+            for i in $(seq 1 30); do
+              if $COMPOSE exec -T backend wget -qO- http://localhost:8080/api/health >/dev/null 2>&1; then OK=1; break; fi
+              sleep 4
+            done
+            if [ "$OK" != 1 ]; then
+              echo "❌ El backend no respondió. Últimos logs:"
+              $COMPOSE logs --tail 60 backend || true
+              echo "↩️  Reversión a la versión anterior (${PREV_TAG})"
+              export IMAGE_TAG="${PREV_TAG}"
+              $COMPOSE up -d --no-deps backend frontend || true
+              exit 1
+            fi
+            echo "${DEPLOY_SHA}" > .last_good_tag
+            docker image prune -f >/dev/null 2>&1 || true
+            $COMPOSE ps
+            echo "✅ Deploy completado — commit ${DEPLOY_SHA}"
+            REMOTE
 
-            echo "✅ Deploy completado — commit: ${{ github.sha }}"
+      - name: Chequeo externo (si APP_URL está definida)
+        if: ${{ vars.APP_URL != '' }}
+        run: |
+          for i in $(seq 1 12); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "${{ vars.APP_URL }}/api/health" || true)
+            [ "$code" = 200 ] && { echo "✅ ${{ vars.APP_URL }}/api/health → 200"; exit 0; }
+            sleep 5
+          done
+          echo "::error::${{ vars.APP_URL }}/api/health no respondió 200 (último código: $code)"; exit 1

@@ -29,6 +29,7 @@ export default function Orders() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [returning, setReturning] = useState(false)
 
   useEffect(() => {
     async function fetchOrders() {
@@ -52,6 +53,23 @@ export default function Orders() {
         if (res.ok) {
           const data = await res.json()
           setOrders(data.orders || [])
+          // Volvemos del checkout de Wompi (agrega ?id=<transacción>): confirmamos con Wompi, desde nuestro servidor,
+          // los pagos pendientes. El estado real nunca lo decide el navegador.
+          if (/[?&]id=/.test(window.location.search)) {
+            setReturning(true)
+            const pend = (data.orders || []).filter((o: Order) => o.status === 'pending_payment' && o.payment_status === 'pending').slice(0, 3)
+            if (pend.length > 0) {
+              await Promise.all(pend.map((o: Order) =>
+                fetch((process.env.NEXT_PUBLIC_API_URL || '') + '/payments/wompi/sync', {
+                  method: 'POST',
+                  headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ order_id: o.id }),
+                }).catch(() => null)
+              ))
+              const again = await fetch((process.env.NEXT_PUBLIC_API_URL || '') + '/orders', { headers: { 'Authorization': 'Bearer ' + token } })
+              if (again.ok) setOrders((await again.json()).orders || [])
+            }
+          }
         } else {
           if (res.status === 401) Router.push('/signin')
           else setError('Error al cargar órdenes')
@@ -122,7 +140,14 @@ export default function Orders() {
   return (
     <div className="container">
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-3xl font-bold mb-6">Mis Órdenes</h1>
+        <h1 className="text-3xl font-bold mb-2">Mis Órdenes</h1>
+        <p className="mb-6"><Link href="/pagos" className="text-blue-600 hover:text-blue-800 text-sm font-medium" aria-label="Ver mis pagos">Ver mis pagos →</Link></p>
+
+        {returning && orders.some(o => o.status === 'pending_payment' && o.payment_status === 'pending') && (
+          <div role="status" className="mb-4 p-3 bg-yellow-100 text-yellow-800 rounded text-sm">
+            Estamos confirmando tu pago con Wompi. Si ya pagaste, puede tardar unos segundos: revisa el estado en <Link href="/pagos" className="underline font-semibold">Mis pagos</Link>.
+          </div>
+        )}
 
         {error && <div className="mb-4 p-3 bg-red-100 text-red-700 rounded">{error}</div>}
 

@@ -1,0 +1,14 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Sincronizar documentación y probar en local",
+      "trigger": "Stop",
+      "description": "Recordatorio al terminar un turno: la skill, el steering, los docs y el contrato deben estar sincronizados con lo que se cambió, y la app debe estar levantada en local y verificada. Ver .kiro/steering/workflow-docs-and-local-testing.md",
+      "action": {
+        "type": "agent",
+        "prompt": "Antes de dar por terminada esta tarea de Mano App revisa la lista de .kiro/steering/workflow-docs-and-local-testing.md: (1) ¿actualizaste .kiro/skills/mano-app/SKILL.md, los steering/hooks, mano_app/docs (MIGRATION_PLAN, SCREENS, ARCHITECTURE_CURRENT_STATE) y el contrato si algo cambió? (2) ¿levantaste la app en local (bash scripts/local-up.sh), corriste las verificaciones que correspondían (smoke, tests/api, tsc, build, verify-design-assets) y le diste al usuario la URL y los pasos para probar? (3) ¿tocaste alguna imagen? No debes. (4) ¿el cambio altera infraestructura, servicios de pago o el margen por pedido? Si sí, actualiza mano_app/docs/COSTS.md y la sección 11 de mano_app/docs/architecture.html con precios verificados (USD y COP). Si falta algo, hazlo ahora y menciona en tu respuesta qué documentos actualizaste."
+      }
+    }
+  ]
+}

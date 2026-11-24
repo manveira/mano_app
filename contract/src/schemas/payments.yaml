@@ -1,0 +1,59 @@
+# Añadido 25-nov-2026 (aditivo): historial de pagos de Wompi mapeado a pedidos.
+Payment:
+  type: object
+  description: Un pago con Wompi y el pedido al que corresponde.
+  properties:
+    reference: { type: string, example: MANO-49-1795507986, description: 'Referencia única que enviamos a Wompi (`MANO-<pedido>-<epoch>`).' }
+    wompi_id: { type: string, example: 12268215-1795508021-44573, description: 'Id de la transacción en Wompi (vacío mientras no exista).' }
+    order_id: { type: integer, format: int64, example: 49 }
+    amount: { type: number, example: 10000, description: Monto en pesos COP. }
+    amount_in_cents: { type: integer, format: int64, example: 1000000, description: Monto en centavos, como lo maneja Wompi. }
+    currency: { type: string, example: COP }
+    status: { type: string, enum: [PENDING, APPROVED, DECLINED, VOIDED, ERROR] }
+    status_message: { type: string, example: Número no válido en Sandbox, description: Motivo informado por Wompi (si lo hay). }
+    payment_method: { type: string, example: NEQUI, description: 'CARD, NEQUI, PSE, BANCOLOMBIA_TRANSFER… (MOCK_NEQUI en modo simulado).' }
+    created_at: { type: string, format: date-time }
+    finalized_at: { type: string, format: date-time }
+    order_status: { type: string, example: paid }
+    escrow_status: { type: string, example: held }
+  required: [reference, amount, amount_in_cents, currency, status, created_at]
+
+PaymentsResponse:
+  type: object
+  properties:
+    payments:
+      type: array
+      items: { $ref: '#/components/schemas/Payment' }
+    count: { type: integer }
+
+PaymentDetailResponse:
+  type: object
+  properties:
+    payment: { $ref: '#/components/schemas/Payment' }
+    timeline:
+      type: array
+      description: Cambios de estado registrados, del más antiguo al más reciente.
+      items:
+        type: object
+        properties:
+          status: { type: string }
+          source: { type: string, enum: [webhook, sync, reconcile] }
+          at: { type: string, format: date-time }
+
+SyncPaymentRequest:
+  type: object
+  properties:
+    order_id: { type: integer, format: int64, minimum: 1 }
+  required: [order_id]
+
+SyncPaymentResponse:
+  type: object
+  properties:
+    order_id: { type: integer, format: int64 }
+    order_status: { type: string }
+    payment_status: { type: string }
+    escrow_status: { type: string }
+    updated: { type: boolean, description: 'true si esta consulta cambió el estado de la orden.' }
+    payments:
+      type: array
+      items: { $ref: '#/components/schemas/Payment' }

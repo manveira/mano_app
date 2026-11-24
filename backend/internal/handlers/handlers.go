@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/rand"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -24,10 +25,15 @@ import (
 )
 
 var allowedRoles = map[string]bool{
-	"business_owner": true,
-	"freelancer":     true,
-	"customer":       true,
+	"business_owner":   true, // Negocio
+	"freelancer":       true, // Comisionista
+	"customer":         true, // Comprador
+	"courier":          true, // Domiciliario
+	"service_provider": true, // Prestación de servicios
 }
+
+// usernameRe: 3–30 caracteres, minúsculas/dígitos/punto/guion/guion bajo; debe ser seguro en URLs (/vendedor/:username).
+var usernameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{2,29}$`)
 
 type Handler struct {
 	db               *gorm.DB
@@ -48,7 +54,7 @@ type signUpRequest struct {
 	Name         string `json:"name" binding:"required"`
 	Email        string `json:"email" binding:"required,email"`
 	Password     string `json:"password" binding:"required,min=8"`
-	Role         string `json:"role" binding:"required,oneof=business_owner freelancer customer"`
+	Role         string `json:"role" binding:"required,oneof=business_owner freelancer customer courier service_provider"`
 	Phone        string `json:"phone"`
 	DocumentID   string `json:"document_id"`
 	NequiNumber  string `json:"nequi_number"`
@@ -174,8 +180,21 @@ func (h *Handler) SignUp(c *gin.Context) {
 		}
 	}
 
+	// Username explícito: se normaliza (minúsculas, sin espacios laterales), se valida el formato y la unicidad.
+	username := strings.ToLower(strings.TrimSpace(req.Username))
+	if username != "" {
+		if !usernameRe.MatchString(username) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid username (3-30 chars: a-z, 0-9, . _ -)"})
+			return
+		}
+		var taken int64
+		h.db.Model(&models.User{}).Where("username = ?", username).Count(&taken)
+		if taken > 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "username already taken"})
+			return
+		}
+	}
 	// Generar username si no se provee
-	username := req.Username
 	if username == "" {
 		username = strings.ToLower(strings.ReplaceAll(req.Name, " ", ""))
 		// Asegurar unicidad agregando sufijo numérico si ya existe
@@ -284,7 +303,7 @@ func (h *Handler) Me(c *gin.Context) {
 	}
 
 	var user models.User
-	h.db.Select("id, name, email, role, username, plan, plan_expires_at, earnings_balance, is_verified").
+	h.db.Select("id, name, email, role, username, phone, document_id, nequi_number, referral_code, plan, plan_expires_at, earnings_balance, is_verified").
 		First(&user, claims.UserID)
 
 	c.JSON(http.StatusOK, gin.H{"user": user})
@@ -1203,6 +1222,33 @@ func (h *Handler) CreateDelivery(c *gin.Context) {
 	var order models.Order
 	if err := h.db.Preload("Delivery").First(&order, req.OrderID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "order not found"})
+		return
+	}
+
+	if claims.Role == "courier" {
+		// Domiciliario: toma un pedido pagado que todavía no tiene entrega y queda asignado a él.
+		if order.Status != "paid" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "order is not available for delivery"})
+			return
+		}
+		if order.Delivery.ID != 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "order already has a delivery"})
+			return
+		}
+		courierID := claims.UserID
+		delivery := models.Delivery{
+			OrderID:   req.OrderID,
+			CourierID: &courierID,
+			Type:      "mano_courier",
+			Status:    "scheduled",
+			ETA:       req.ETA,
+			Tracking:  req.Tracking,
+		}
+		if err := h.db.Create(&delivery).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create delivery"})
+			return
+		}
+		c.JSON(http.StatusCreated, delivery)
 		return
 	}
 

@@ -12,6 +12,8 @@ func NewRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 	r := gin.Default()
 	h := handlers.NewHandler(db, cfg.JWTSecret, cfg.StripeSecretKey, cfg.StripeWebhookKey, cfg.MockMode)
 
+	h.StartWompiReconciler() // revisa pagos pendientes contra Wompi (solo con WOMPI_PRIVATE_KEY)
+
 	api := r.Group("/api")
 	{
 		// ── Auth ──────────────────────────────────────────────────────────────
@@ -27,7 +29,7 @@ func NewRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		api.GET("/businesses/:id", h.GetBusiness)
 		api.GET("/businesses/:id/products", h.ListProducts)
 		api.GET("/products", h.ListProducts)
-		api.GET("/feed", h.GetFeedV2)       // stories filtradas + boost publicidad
+		api.GET("/feed", h.GetFeedV2)        // stories filtradas + boost publicidad
 		api.GET("/stories", h.ListStoriesV2) // filtra expiradas
 		api.GET("/ads", h.ListAdvertisements)
 		api.GET("/packages", h.ListPackages)
@@ -37,7 +39,7 @@ func NewRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		api.GET("/vendedor/:username", h.FreelancerStorefront)
 		api.GET("/negocio/:slug", h.BusinessPublicProfile)
 		api.GET("/deliveries/:id", h.GetDelivery)
-		api.POST("/orders/guest", h.CreateGuestOrder)        // compra sin registro
+		api.POST("/orders/guest", h.CreateGuestOrder)                  // compra sin registro
 		api.POST("/payments/wompi/guest", h.InitiateWompiPaymentGuest) // pago guest
 
 		// Webhooks
@@ -48,6 +50,7 @@ func NewRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 		secured := api.Group("/").Use(h.AuthMiddleware())
 		{
 			secured.GET("/me", h.Me)
+			secured.PATCH("/me", h.UpdateMe)
 			secured.GET("/me/businesses", h.MyBusinesses)
 
 			secured.POST("/businesses", h.CreateBusiness)
@@ -63,6 +66,9 @@ func NewRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 			secured.POST("/orders/:id/pay", h.CreateOrderPayment)
 
 			secured.POST("/payments/wompi/initiate", h.InitiateWompiPayment)
+			secured.POST("/payments/wompi/sync", h.SyncWompiPayment) // verifica con Wompi al volver del checkout
+			secured.GET("/payments", h.ListMyPayments)               // "Mis pagos"
+			secured.GET("/payments/:reference", h.GetMyPayment)
 
 			secured.GET("/dashboard", h.BusinessDashboard)
 			secured.GET("/dashboard/business/stats", h.BusinessDashboardStats)
@@ -86,6 +92,7 @@ func NewRouter(cfg *config.Config, db *gorm.DB) *gin.Engine {
 			secured.POST("/sell/withdraw", h.RequestWithdrawal)
 			secured.POST("/sell/upgrade-pro", h.UpgradePro)
 			secured.GET("/sell/stats", h.SellStats)
+			secured.GET("/sell/movements", h.MyMovements)
 
 			// ── Admin ─────────────────────────────────────────────────────────
 			secured.POST("/admin/disputes/:id/resolve", h.ResolveDispute)

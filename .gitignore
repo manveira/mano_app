@@ -3,6 +3,10 @@
 .env.local
 .env.production
 
+# Configuración del agente: tiene tokens (la plantilla mcp.json.example sí se versiona)
+.kiro/settings/mcp.json
+.kiro/settings/*.bak
+
 # Node
 web/node_modules/
 web/.next/
@@ -22,3 +26,6 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Resultados generados de las pruebas de API (el informe curado es docs/BASELINE_RESULTS.md)
+tests/api/results/

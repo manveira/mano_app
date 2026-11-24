@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Proteger imágenes del diseñador",
+      "trigger": "PreToolUse",
+      "description": "Bloquea cualquier escritura, borrado o reescritura de imágenes (fuente de verdad visual del diseñador). Ver .kiro/steering/design-assets-immutable.md",
+      "matcher": "(?i)write|replace|delete|append|bash|shell|edit|rewrite|rename|format|remove|move",
+      "action": {
+        "type": "command",
+        "command": "bash .kiro/scripts/guard-design-assets.sh",
+        "timeout": 10
+      }
+    }
+  ]
+}

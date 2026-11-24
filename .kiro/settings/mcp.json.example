@@ -1,0 +1,36 @@
+{
+  "mcpServers": {
+    "github": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "-e",
+        "GITHUB_TOOLSETS",
+        "ghcr.io/github/github-mcp-server"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "<PEGAR_TU_TOKEN_DE_GITHUB_AQUI>",
+        "GITHUB_TOOLSETS": "context,repos,pull_requests,issues,actions"
+      },
+      "disabled": false
+    },
+    "azure": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "msmcp-azure",
+        "azmcp",
+        "server",
+        "start"
+      ],
+      "env": {
+        "DOTNET_SYSTEM_GLOBALIZATION_INVARIANT": "1"
+      },
+      "disabled": false
+    }
+  }
+}

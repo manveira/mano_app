@@ -1,6 +1,8 @@
 import { useRouter } from 'next/router'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { api, friendlyError } from '../../lib/api'
+import { currentRole } from '../../lib/session'
 
 type Product = { id: number; name: string; description: string; price: number; stock: number; image_url: string; commission_rate: number; business_id: number }
 type Business = { id: number; name: string; description: string; category: string; location: string; address: string; image_url: string; is_featured: boolean }
@@ -14,6 +16,10 @@ export default function BusinessProfile() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [added, setAdded] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isFreelancer, setIsFreelancer] = useState(false)
+  const [affMsg, setAffMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
+  useEffect(() => { setIsFreelancer(currentRole() === 'freelancer') }, [])
 
   useEffect(() => {
     if (!slug) return
@@ -42,6 +48,16 @@ export default function BusinessProfile() {
     localStorage.setItem('mano_cart', JSON.stringify(cart))
     setAdded(p.id)
     setTimeout(() => setAdded(null), 1500)
+  }
+
+  async function affiliate(p: Product) {
+    setAffMsg(null)
+    try {
+      const d = await api<{ url?: string; message?: string }>('/sell/affiliate', { method: 'POST', body: { product_id: p.id } })
+      setAffMsg({ ok: true, text: d.message === 'already affiliated'
+        ? `Ya vendes "${p.name}". Lo encuentras en Mi catálogo.`
+        : `¡Listo! "${p.name}" ya está en tu catálogo. Compártelo desde Mi catálogo.` })
+    } catch (e) { setAffMsg({ ok: false, text: friendlyError(e) }) }
   }
 
   if (loading) return <div className="container"><p className="text-gray-500 mt-8">Cargando...</p></div>
@@ -83,6 +99,14 @@ export default function BusinessProfile() {
           </div>
         </div>
 
+        {isFreelancer && (
+          <div className="mt-4 p-3 rounded bg-lime-100 text-sm">
+            Eres comisionista: toca <strong>Vender y ganar</strong> en un producto para agregarlo a tu catálogo.{' '}
+            <Link href="/catalogo" className="font-semibold underline">Ver mi catálogo</Link>
+          </div>
+        )}
+        {affMsg && <div role="status" className={'mt-3 p-3 rounded text-sm ' + (affMsg.ok ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-700')}>{affMsg.text}</div>}
+
         {/* Productos */}
         <h2 className="mt-6 text-xl font-semibold mb-3">Productos ({products.length})</h2>
         {products.length === 0 ? (
@@ -102,6 +126,11 @@ export default function BusinessProfile() {
                         {p.stock > 0 ? `${p.stock} disponibles` : 'Sin stock'}
                       </span>
                     </div>
+                    {isFreelancer && (
+                      <button onClick={() => affiliate(p)} className="px-3 py-1 rounded text-sm font-bold bg-[#91e631] text-black mr-2">
+                        Vender y ganar ${(p.price * p.commission_rate).toLocaleString('es-CO')}
+                      </button>
+                    )}
                     <button
                       disabled={p.stock === 0}
                       onClick={() => addToCart(p)}

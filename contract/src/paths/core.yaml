@@ -1,0 +1,745 @@
+# Dominio "core": health, auth, usuario, negocios, productos y perfil público de negocio.
+# Rutas SIN el prefijo /api (lo aporta `servers`). Verificado en vivo contra el backend local (MOCK_MODE=true).
+# NOTA GENERAL: en todas las rutas protegidas el middleware responde 401 ANTES del handler (mensajes reales:
+# "authorization required", "invalid authorization header", "invalid or expired token"); por eso las comprobaciones
+# `claims == nil` dentro de los handlers que devolverían 403 son código muerto.
+/health:
+  get:
+    tags: [Health]
+    operationId: getHealth
+    summary: Estado del servicio
+    description: Sin autenticación. Solo responde `GET` (cualquier otro método devuelve el 404 de texto plano de Gin, no JSON).
+    responses:
+      '200':
+        description: Servicio arriba.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HealthResponse' }
+            example: { status: ok }
+
+/auth/signup:
+  post:
+    tags: [Auth]
+    operationId: authSignUp
+    summary: Registrar usuario
+    description: |
+      Público. Crea un usuario con rol `business_owner`, `freelancer` o `customer` (`admin` no se puede crear aquí).
+      NO devuelve token: hay que llamar después a `POST /auth/signin`.
+
+      Rarezas reales:
+      - Todos los fallos de `INSERT` (email duplicado, teléfono vacío duplicado, username duplicado, etc.) caen en
+        un único 400 genérico `email already registered or invalid data`.
+      - Teléfono duplicado (si se envía) da 400 `phone number already registered`.
+      - Roles aceptados: `business_owner`, `freelancer`, `customer`, `courier` (Domiciliario), `service_provider` (Prestación de servicios).
+      - Los mensajes de validación (`Key: 'signUpRequest.Password' Error:Field validation ...`) son texto crudo del validador de Go.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SignUpRequest' }
+          example:
+            name: Contrato Core Uno
+            email: core.uno@example.com
+            password: password123
+            role: customer
+            phone: '3991110002'
+    responses:
+      '201':
+        description: Usuario creado.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignUpResponse' }
+            example: { id: 23, email: core.uno@example.com, role: customer, username: contratocoreuno }
+      '400':
+        description: |
+          Validación (campos requeridos, email inválido, `password` < 8, `role` fuera de `oneof`), JSON mal formado,
+          teléfono ya registrado o email/username duplicado.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            examples:
+              validacion:
+                value: { error: "Key: 'signUpRequest.Password' Error:Field validation for 'Password' failed on the 'min' tag" }
+              rol:
+                value: { error: "Key: 'signUpRequest.Role' Error:Field validation for 'Role' failed on the 'oneof' tag" }
+              duplicado:
+                value: { error: email already registered or invalid data }
+              telefono:
+                value: { error: phone number already registered }
+      '500': { $ref: '#/components/responses/ServerError' }
+
+/auth/signin:
+  post:
+    tags: [Auth]
+    operationId: authSignIn
+    summary: Iniciar sesión
+    description: |
+      Público. Devuelve el JWT (HS256, 72 h) y un resumen del usuario. El email se compara en minúsculas.
+      Credenciales incorrectas y usuario inexistente dan el mismo 401 `invalid credentials`.
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SignInRequest' }
+          example: { email: juan@example.com, password: password123 }
+    responses:
+      '200':
+        description: Sesión creada.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SignInResponse' }
+            example:
+              token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJyb2xlIjoiYnVzaW5lc3Nfb3duZXIi...
+              user: { id: 1, name: Juan Pérez, email: juan@example.com, role: business_owner }
+      '400':
+        description: Validación (`email` ausente/ inválido o `password` ausente) o JSON mal formado.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            example: { error: "Key: 'signInRequest.Email' Error:Field validation for 'Email' failed on the 'email' tag" }
+      '401':
+        description: Credenciales inválidas.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            example: { error: invalid credentials }
+      '500': { $ref: '#/components/responses/ServerError' }
+
+/me:
+  get:
+    tags: [Usuario]
+    operationId: getMe
+    summary: Perfil del usuario autenticado
+    description: |
+      Requiere JWT (cualquier rol). Devuelve `{ "user": {...} }` con solo algunos campos de `User` poblados
+      (ver `MeResponse`). Si el usuario fue borrado tras emitir el token, el handler no lo detecta y devuelve 200
+      con un `user` en ceros (no verificado en vivo, deducido del código: el resultado de `First` se ignora).
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Usuario actual.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MeResponse' }
+            example:
+              user:
+                id: 1
+                name: Juan Pérez
+                email: juan@example.com
+                role: business_owner
+                username: juan
+                document_id: ''
+                phone: ''
+                nequi_number: ''
+                is_verified: true
+                plan: free
+                plan_expires_at: null
+                earnings_balance: 0
+                referral_code: ''
+                referred_by: null
+      '401':
+        description: Sin token, cabecera mal formada o token inválido/expirado.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            examples:
+              sinToken: { value: { error: authorization required } }
+              cabecera: { value: { error: invalid authorization header } }
+              token: { value: { error: invalid or expired token } }
+  patch:
+    tags: [Usuario]
+    operationId: updateMe
+    summary: Editar el perfil propio (pantalla Ajustes)
+    description: |
+      Añadido en v1.1 (aditivo). Requiere JWT (cualquier rol). Devuelve `{ "user": {...} }` igual que `GET /me`.
+      Errores 400: `name must have between 2 and 80 characters`, `invalid phone`, `phone number already registered`,
+      `invalid nequi_number (10 digits)`, `invalid document_id`.
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/UpdateMeRequest' }
+          example: { name: Manuel Angulo, nequi_number: '3001234567' }
+    responses:
+      '200':
+        description: Perfil actualizado.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MeResponse' }
+      '400': { $ref: '#/components/responses/BadRequest' }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+
+/me/businesses:
+  get:
+    tags: [Usuario, Negocios]
+    operationId: listMyBusinesses
+    summary: Negocios del usuario autenticado
+    description: |
+      Requiere JWT. Devuelve los negocios cuyo `owner_id` es el usuario, aprobados o no. Cualquier rol puede llamarlo;
+      si no es dueño de ninguno devuelve `{"businesses": []}` (200).
+    security: [{ bearerAuth: [] }]
+    responses:
+      '200':
+        description: Negocios propios.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BusinessListResponse' }
+            example:
+              businesses:
+                - id: 1
+                  owner_id: 1
+                  name: Café La Esquina
+                  slug: cafe-la-esquina
+                  description: Café artesanal con especialidad en espressos
+                  category: Café
+                  location: Centro Histórico
+                  address: Calle Principal 123
+                  latitude: 1.7989
+                  longitude: -78.7628
+                  image_url: https://images.unsplash.com/photo-1495521821757-a1efb6729352?w=400
+                  is_featured: true
+                  is_approved: true
+                  default_commission_rate: 0.15
+                  monthly_limit: 0
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '500': { $ref: '#/components/responses/ServerError' }
+
+/businesses:
+  get:
+    tags: [Negocios]
+    operationId: listBusinesses
+    summary: Listar negocios aprobados
+    description: |
+      Público. Solo `is_approved = true`. Sin paginación. Los filtros usan `ILIKE %valor%` (subcadena, sin distinguir
+      mayúsculas; dependen de PostgreSQL). No filtra por `is_featured` ni ordena de forma garantizada.
+    parameters:
+      - name: category
+        in: query
+        required: false
+        schema: { type: string }
+        description: Subcadena de `category` (ILIKE).
+        example: caf
+      - name: location
+        in: query
+        required: false
+        schema: { type: string }
+        description: Subcadena de `location` (ILIKE).
+        example: centro
+    responses:
+      '200':
+        description: Negocios (puede ser lista vacía).
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BusinessListResponse' }
+            example:
+              businesses:
+                - id: 2
+                  owner_id: 1
+                  name: Artesanías Casa Nariño
+                  slug: artesanias-casa-narino
+                  description: Hamacas, mochilas y artesanías del Pacífico colombiano
+                  category: Artesanías
+                  location: Tumaco
+                  address: Barrio El Morro 45
+                  latitude: 1.8003
+                  longitude: -78.7612
+                  image_url: https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400
+                  is_featured: false
+                  is_approved: true
+                  default_commission_rate: 0.2
+                  monthly_limit: 0
+      '500': { $ref: '#/components/responses/ServerError' }
+  post:
+    tags: [Negocios]
+    operationId: createBusiness
+    summary: Crear negocio
+    description: |
+      Requiere JWT con rol `business_owner` (validado en el handler; otros roles reciben 403).
+      El negocio nace con `is_approved = false` hasta que un admin lo apruebe; mientras tanto no aparece en
+      `GET /businesses` y no se le pueden crear productos. El `slug` se genera único a partir del nombre.
+      Devuelve el `Business` DIRECTO (sin envolver). `default_commission_rate` fuera de 0.10–0.40 se corrige en
+      silencio a 0.15 (no es error).
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/BusinessCreateRequest' }
+          example:
+            name: Contrato Core Tienda
+            description: Tienda del contrato core
+            category: Pruebas
+            location: Tumaco
+    responses:
+      '201':
+        description: Negocio creado (pendiente de aprobación).
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Business' }
+            example:
+              id: 8
+              owner_id: 1
+              name: Contrato Core Tienda
+              slug: contrato-core-tienda
+              description: Tienda del contrato core
+              category: Pruebas
+              location: Tumaco
+              address: ''
+              latitude: 0
+              longitude: 0
+              image_url: ''
+              is_featured: false
+              is_approved: false
+              default_commission_rate: 0.15
+              monthly_limit: 0
+      '400':
+        description: Validación (`name`, `description`, `category`, `location` requeridos) o JSON mal formado.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            example: { error: "Key: 'businessRequest.Description' Error:Field validation for 'Description' failed on the 'required' tag" }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403':
+        description: El rol del token no es `business_owner`.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            example: { error: only business owners can create businesses }
+      '500': { $ref: '#/components/responses/ServerError' }
+
+/businesses/apply:
+  post:
+    tags: [Negocios]
+    operationId: applyBusiness
+    summary: Enviar solicitud de registro de negocio (KYC)
+    description: |
+      Requiere JWT; cualquier rol puede enviarla (el handler no valida rol). Crea una `BusinessApplication` en estado
+      `pending`; la revisan los admins (`GET /admin/applications`). Solo se permite una solicitud `pending` por usuario
+      (si ya hay una responde 400 `you already have a pending application`).
+
+      Rareza: esta ruta es literal y convive con `/businesses/{id}`; Gin resuelve `apply` como ruta estática antes
+      que como `{id}`, pero `GET /businesses/apply` NO existe como lista (cae en `GET /businesses/{id}` → 400 `invalid business id`).
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/BusinessApplyRequest' }
+          example:
+            business_name: Contrato Core Negocio
+            category: Pruebas
+            description: Solicitud de contrato core
+            nequi_number: '3991110002'
+    responses:
+      '201':
+        description: Solicitud registrada.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BusinessApplyResponse' }
+            example:
+              application:
+                id: 1
+                user_id: 23
+                business_name: Contrato Core Negocio
+                category: Pruebas
+                description: Solicitud de contrato core
+                nequi_number: '3991110002'
+                document_image_url: ''
+                status: pending
+                rejection_reason: ''
+                reviewed_by: null
+                reviewed_at: null
+                created_at: '2026-10-28T04:30:31.567471Z'
+              message: Application submitted. Review takes 24-48 hours.
+      '400':
+        description: Validación (campos requeridos, JSON mal formado) o ya existe una solicitud pendiente.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            examples:
+              pendiente: { value: { error: you already have a pending application } }
+              validacion: { value: { error: "Key: 'applyBusinessRequest.Category' Error:Field validation for 'Category' failed on the 'required' tag" } }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '500': { $ref: '#/components/responses/ServerError' }
+
+/businesses/{id}:
+  get:
+    tags: [Negocios]
+    operationId: getBusiness
+    summary: Detalle de negocio con sus productos
+    description: |
+      Público. Devuelve `{business, products}` (productos duplicados, ver `BusinessDetailResponse`).
+      INCONSISTENCIA: NO exige `is_approved` (un negocio pendiente se devuelve igual, con `products: []`) y devuelve
+      TODOS los productos, incluidos `is_active=false` e `is_exclusive=true`. Para el catálogo filtrado usar
+      `GET /businesses/{id}/products` o `GET /negocio/{slug}`.
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    responses:
+      '200':
+        description: Negocio y productos.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BusinessDetailResponse' }
+            example:
+              business:
+                id: 3
+                owner_id: 1
+                name: Tienda de Prueba
+                slug: tienda-de-prueba
+                description: Descripción de prueba
+                category: Ropa
+                location: Tumaco
+                address: Calle 10 #5-20
+                latitude: 1.801
+                longitude: -78.76
+                image_url: ''
+                is_featured: false
+                is_approved: false
+                default_commission_rate: 0.15
+                monthly_limit: 0
+              products: []
+      '400':
+        description: "`id` no numérico."
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            example: { error: invalid business id }
+      '404':
+        description: Negocio inexistente.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            example: { error: business not found }
+      '500': { $ref: '#/components/responses/ServerError' }
+  patch:
+    tags: [Negocios]
+    operationId: patchBusiness
+    summary: Editar negocio propio
+    description: |
+      Requiere JWT con rol `business_owner` (403 en caso contrario) y ser el dueño (`owner_id`): si no, 403 `not your business`.
+      Actualización parcial: solo cambian los campos con valor (ver `BusinessPatchRequest`). Si cambia `name`, se
+      regenera `slug` (el slug anterior deja de funcionar en `/negocio/{slug}`). Devuelve el `Business` DIRECTO
+      recargado.
+
+      Rarezas reales: un JSON mal formado NO da 400 (el error de `ShouldBindJSON` se ignora y se responde 200 con
+      el negocio sin cambios); un cuerpo vacío tampoco falla. Puede editar negocios aún no aprobados.
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    requestBody:
+      required: false
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/BusinessPatchRequest' }
+          example: { description: Nueva desc core, default_commission_rate: 0.25 }
+    responses:
+      '200':
+        description: Negocio actualizado.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Business' }
+            example:
+              id: 8
+              owner_id: 1
+              name: Contrato Core Tienda
+              slug: contrato-core-tienda
+              description: Nueva desc core
+              category: Pruebas
+              location: Tumaco
+              address: ''
+              latitude: 0
+              longitude: 0
+              image_url: ''
+              is_featured: false
+              is_approved: false
+              default_commission_rate: 0.25
+              monthly_limit: 0
+      '400':
+        description: "`id` no numérico."
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            example: { error: invalid id }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403':
+        description: Rol distinto de `business_owner`, o el negocio es de otro dueño.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            examples:
+              rol: { value: { error: only business owners can edit businesses } }
+              ajeno: { value: { error: not your business } }
+      '404':
+        description: Negocio inexistente.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            example: { error: business not found }
+
+/businesses/{id}/products:
+  get:
+    tags: [Negocios, Productos]
+    operationId: listBusinessProducts
+    summary: Productos activos de un negocio
+    description: |
+      Público con autenticación OPCIONAL. Mismo handler que `GET /products` con el filtro `business_id` tomado de la ruta.
+      Solo `is_active = true`. Los productos `is_exclusive` se incluyen únicamente si el JWT enviado es de un usuario
+      con `plan = pro` vigente; un token inválido se ignora en silencio (se trata como anónimo, no da 401).
+      NO comprueba que el negocio exista ni esté aprobado: un `id` inexistente devuelve `{"products": []}` (200).
+      Un `id` no numérico NO da 400: la consulta SQL falla y responde 500 `failed to list products`.
+      Sin paginación.
+    security: [{}, { bearerAuth: [] }]
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    responses:
+      '200':
+        description: Productos del negocio.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductListResponse' }
+            example:
+              products:
+                - id: 7
+                  business_id: 1
+                  name: Americano
+                  description: Café americano suave
+                  price: 3500
+                  stock: 200
+                  image_url: ''
+                  commission_rate: 0.15
+                  is_active: true
+                  is_exclusive: false
+      '500':
+        description: Error interno (incluye `id` no numérico en la ruta).
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            example: { error: failed to list products }
+
+/products:
+  get:
+    tags: [Productos]
+    operationId: listProducts
+    summary: Listar productos activos
+    description: |
+      Público con autenticación OPCIONAL (igual que `GET /businesses/{id}/products`). Solo `is_active = true`;
+      los `is_exclusive` solo para usuarios con plan Pro vigente. No exige que el negocio esté aprobado.
+      Sin paginación. El filtro `business_id` no numérico produce 500 (fallo SQL), no 400.
+    security: [{}, { bearerAuth: [] }]
+    parameters:
+      - name: business_id
+        in: query
+        required: false
+        schema: { type: integer, format: int64 }
+        description: Filtra por negocio (sin validar que exista).
+    responses:
+      '200':
+        description: Productos.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductListResponse' }
+            example:
+              products:
+                - id: 3
+                  business_id: 1
+                  name: Latte Macchiato
+                  description: Latte con arte decorativo
+                  price: 6000
+                  stock: 79
+                  image_url: https://images.unsplash.com/photo-1461023058943-07fcbe16d735?w=300
+                  commission_rate: 0.15
+                  is_active: true
+                  is_exclusive: false
+      '500':
+        description: Error interno (incluye `business_id` no numérico).
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            example: { error: failed to list products }
+  post:
+    tags: [Productos]
+    operationId: createProduct
+    summary: Crear producto
+    description: |
+      Requiere JWT con rol `business_owner`, dueño del negocio `business_id`, y negocio YA aprobado.
+      El producto nace con `is_active = true`. Devuelve el `Product` DIRECTO.
+
+      Orden de comprobación (importa para el código): rol (403) → validación del cuerpo (400) → negocio existe (404)
+      → es del usuario (403) → está aprobado (403 `business is not approved yet`) → `commission_rate` en rango (400).
+      `stock: 0` y `price: 0` son rechazados por `binding:"required"` (400), ver `ProductCreateRequest`.
+      Si `commission_rate` falta/0 se hereda `default_commission_rate` del negocio.
+    security: [{ bearerAuth: [] }]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ProductCreateRequest' }
+          example:
+            business_id: 1
+            name: Contrato Core Producto
+            description: Producto contrato core
+            price: 1000
+            stock: 3
+    responses:
+      '201':
+        description: Producto creado.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Product' }
+            example:
+              id: 27
+              business_id: 1
+              name: Contrato Core Producto
+              description: Producto contrato core
+              price: 1000
+              stock: 3
+              image_url: ''
+              commission_rate: 0.15
+              is_active: true
+              is_exclusive: false
+      '400':
+        description: Validación del cuerpo, JSON mal formado o `commission_rate` fuera de 0.10–0.40.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            examples:
+              validacion: { value: { error: "Key: 'productRequest.Stock' Error:Field validation for 'Stock' failed on the 'required' tag" } }
+              comision: { value: { error: commission_rate must be between 10% and 40% } }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403':
+        description: Rol distinto de `business_owner`, negocio de otro dueño, o negocio sin aprobar.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            examples:
+              rol: { value: { error: only business owners can create products } }
+              ajeno: { value: { error: you can only add products to your own business } }
+              sinAprobar: { value: { error: business is not approved yet } }
+      '404':
+        description: El negocio `business_id` no existe.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            example: { error: business not found }
+      '500': { $ref: '#/components/responses/ServerError' }
+
+/products/{id}:
+  patch:
+    tags: [Productos]
+    operationId: patchProduct
+    summary: Activar/desactivar producto propio
+    description: |
+      Requiere JWT con rol `business_owner` y ser dueño del negocio del producto. SOLO permite cambiar `is_active`
+      (otros campos del cuerpo se ignoran: no hay forma de editar precio, stock o nombre). Al cambiar `is_active`
+      se sincronizan los `ReferralLink` del producto. Devuelve el `Product` DIRECTO.
+      Un cuerpo vacío (sin JSON) da 400 (EOF), pero `{}` es válido y devuelve 200 sin cambios.
+      Orden: rol (403) → `id` numérico (400) → cuerpo JSON (400) → producto existe (404) → ownership (403).
+    security: [{ bearerAuth: [] }]
+    parameters:
+      - $ref: '#/components/parameters/IdPath'
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ProductPatchRequest' }
+          example: { is_active: false }
+    responses:
+      '200':
+        description: Producto actualizado.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Product' }
+            example:
+              id: 27
+              business_id: 1
+              name: Contrato Core Producto
+              description: Producto contrato core
+              price: 1000
+              stock: 3
+              image_url: ''
+              commission_rate: 0.15
+              is_active: false
+              is_exclusive: false
+      '400':
+        description: "`id` no numérico o JSON inválido/ausente."
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            examples:
+              id: { value: { error: invalid product id } }
+              json: { value: { error: "invalid character 'b' looking for beginning of value" } }
+      '401': { $ref: '#/components/responses/Unauthorized' }
+      '403':
+        description: Rol distinto de `business_owner` o el producto es de otro dueño.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            examples:
+              rol: { value: { error: only business owners can update products } }
+              ajeno: { value: { error: you can only update your own products } }
+      '404':
+        description: Producto inexistente.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            example: { error: product not found }
+
+/negocio/{slug}:
+  get:
+    tags: [Negocios]
+    operationId: getBusinessPublicProfile
+    summary: Perfil público de un negocio por slug
+    description: |
+      Público, sin autenticación. Solo negocios `is_approved = true` (uno pendiente da 404, a diferencia de
+      `GET /businesses/{id}`). Devuelve `{business, products, stats, slug}` con los productos `is_active`
+      (incluye los exclusivos Pro: aquí NO se filtra por plan) y estadísticas de órdenes pagadas.
+      Cambiar el nombre del negocio (`PATCH /businesses/{id}`) cambia su slug.
+    parameters:
+      - name: slug
+        in: path
+        required: true
+        schema: { type: string }
+        example: cafe-la-esquina
+    responses:
+      '200':
+        description: Perfil público.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BusinessPublicProfileResponse' }
+            example:
+              business:
+                id: 1
+                owner_id: 1
+                name: Café La Esquina
+                slug: cafe-la-esquina
+                description: Café artesanal con especialidad en espressos
+                category: Café
+                location: Centro Histórico
+                address: Calle Principal 123
+                latitude: 1.7989
+                longitude: -78.7628
+                image_url: https://images.unsplash.com/photo-1495521821757-a1efb6729352?w=400
+                is_featured: true
+                is_approved: true
+                default_commission_rate: 0.15
+                monthly_limit: 0
+              products:
+                - id: 7
+                  business_id: 1
+                  name: Americano
+                  description: Café americano suave
+                  price: 3500
+                  stock: 200
+                  image_url: ''
+                  commission_rate: 0.15
+                  is_active: true
+                  is_exclusive: false
+              stats: { total_orders: 7, total_revenue: 63500 }
+              slug: cafe-la-esquina
+      '404':
+        description: Slug inexistente o negocio no aprobado.
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Error' }
+            example: { error: business not found }

@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mano App — Arquitectura actual y objetivo</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --line:#2a2f3a; --text:#e8eaf0; --muted:#9aa3b2;
+    --lime:#bef264; --blue:#60a5fa; --red:#f87171; --amber:#fbbf24; --green:#4ade80; --violet:#a78bfa;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font:15px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  header{padding:28px 24px 8px;max-width:1100px;margin:0 auto}
+  h1{margin:0 0 4px;font-size:26px} h1 span{color:var(--lime)}
+  header p{margin:0;color:var(--muted)}
+  nav{position:sticky;top:0;background:rgba(15,17,21,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);z-index:5}
+  nav div{max-width:1100px;margin:0 auto;padding:10px 24px;display:flex;gap:16px;flex-wrap:wrap;font-size:14px}
+  nav a{color:var(--muted);text-decoration:none} nav a:hover{color:var(--lime)}
+  main{max-width:1100px;margin:0 auto;padding:8px 24px 60px}
+  section{margin-top:36px}
+  h2{font-size:20px;margin:0 0 4px;border-left:4px solid var(--lime);padding-left:10px}
+  .sub{color:var(--muted);margin:0 0 14px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px}
+  svg{width:100%;height:auto;display:block}
+  svg text{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;fill:var(--text)}
+  .box{fill:#1e2330;stroke:#3a4152;stroke-width:1.5;rx:10}
+  .box.lime{stroke:var(--lime)} .box.blue{stroke:var(--blue)} .box.red{stroke:var(--red)}
+  .box.amber{stroke:var(--amber)} .box.violet{stroke:var(--violet)} .box.dash{stroke-dasharray:6 5;fill:#171a21}
+  .t{font-size:14px;font-weight:600} .s{font-size:11.5px;fill:var(--muted)} .lbl{font-size:11.5px;fill:var(--amber)}
+  .arrow{stroke:#7b8497;stroke-width:1.6;fill:none;marker-end:url(#a)}
+  .arrow.dash{stroke-dasharray:5 4}
+  .arrow.lime{stroke:var(--lime);marker-end:url(#al)}
+  .gw{fill:#222b14;stroke:var(--lime);stroke-width:2;rx:12}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:12.5px;color:var(--muted)}
+  .legend i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:800px){.grid2{grid-template-columns:1fr}}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+  code{background:#0b0d12;border:1px solid var(--line);border-radius:5px;padding:1px 6px;font-size:12.5px;color:#d7e3ff}
+  .pill{display:inline-block;padding:1px 9px;border-radius:99px;font-size:11.5px;font-weight:600}
+  .ok{background:#12301d;color:var(--green)} .bad{background:#3a1717;color:var(--red)}
+  .warn{background:#3a2e10;color:var(--amber)} .info{background:#142640;color:var(--blue)}
+  .bar{height:10px;background:#0b0d12;border:1px solid var(--line);border-radius:99px;overflow:hidden;display:flex;margin:8px 0 4px}
+  .bar i{display:block;height:100%} .bar .d{background:var(--green)} .bar .p{background:var(--amber)}
+  .kpi{display:flex;gap:22px;flex-wrap:wrap;margin:6px 0 10px} .kpi b{font-size:22px;display:block} .kpi span{color:var(--muted);font-size:12.5px}
+  .flow{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;counter-reset:s}
+  .step{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 14px 12px;position:relative}
+  .step::before{counter-increment:s;content:counter(s);position:absolute;top:-10px;left:12px;background:var(--lime);color:#000;
+    width:22px;height:22px;border-radius:50%;font-weight:700;font-size:12px;display:grid;place-items:center}
+  .step.bad{border-color:var(--red)} .step.warn{border-color:var(--amber)}
+  .step b{display:block;margin-bottom:2px} .step p{margin:4px 0 8px;color:var(--muted);font-size:13px}
+  .bar{display:flex;height:34px;border-radius:8px;overflow:hidden;font-size:12.5px;font-weight:600;color:#000}
+  .bar div{display:grid;place-items:center;white-space:nowrap}
+  .phase{display:grid;grid-template-columns:70px 1fr 90px;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);align-items:start}
+  .phase:last-child{border:0} .phase h4{margin:0;color:var(--lime)}
+  footer{max-width:1100px;margin:0 auto;padding:0 24px 40px;color:var(--muted);font-size:12.5px}
+</style>
+</head>
+<body>
+
+<header>
+  <h1><span>mano</span> · Arquitectura actual y objetivo</h1>
+  <p>Análisis del repo (27 oct 2026), <b>actualizado con el avance real el 24 nov 2026</b>. Detalle en <code>ARCHITECTURE_CURRENT_STATE.md</code> y <code>MIGRATION_PLAN.md</code>.</p>
+</header>
+<nav><div>
+  <a href="#avance">Avance</a><a href="#actual">1 · Hoy</a><a href="#ejecucion">2 · Quién corre dónde</a><a href="#objetivo">3 · Objetivo</a>
+  <a href="#headers">4 · Headers de cliente</a><a href="#ruteo">5 · Ruteo</a>
+  <a href="#venta">6 · Flujo de venta</a><a href="#acople">7 · Acoplamientos</a>
+  <a href="#hallazgos">8 · Hallazgos</a><a href="#fases">9 · Fases</a><a href="#decisiones">10 · Decisiones</a><a href="#costos">11 · Costos</a>
+</div></nav>
+
+<main>
+
+<!-- ============================ AVANCE REAL ============================ -->
+<section id="avance">
+  <h2>Avance real del refactor · corte 24 nov 2026</h2>
+  <p class="sub">De las 9 fases del plan, <b>ninguna ha pasado su gate</b>. La arquitectura objetivo (gateway + servicios laterales + web estático + apps nativas) <b>todavía no existe</b>: hoy sigue siendo el monolito Go detrás de nginx con el web de Next.js. Lo que sí avanzó es lo que habilita el resto: contrato, pagos y entorno de pruebas.</p>
+  <div class="card">
+    <div class="kpi">
+      <div><b>13 de 76</b><span>tareas hechas (≈ 17 %)</span></div>
+      <div><b>7</b><span>en curso (≈ 26 % con ellas)</span></div>
+      <div><b>0 de 9</b><span>gates cerrados</span></div>
+      <div><b>182 / 0 / 1</b><span>API: pasan / fallan / fallo conocido</span></div>
+    </div>
+    <div class="bar" title="13 hechas, 7 en curso, 56 sin empezar"><i class="d" style="width:17.1%"></i><i class="p" style="width:9.2%"></i></div>
+    <div class="legend"><span><i style="background:var(--green)"></i>hechas</span><span><i style="background:var(--amber)"></i>en curso</span><span><i style="background:#0b0d12;border:1px solid var(--line)"></i>sin empezar</span></div>
+    <table style="margin-top:14px">
+      <tr><th>Fase</th><th>Qué es</th><th>Estado</th><th>Hecho / falta</th></tr>
+      <tr><td>F0</td><td>Fundaciones y guardrails</td><td><span class="pill warn">casi</span></td><td>Entorno local, smoke, línea base y CI hechos; <b>CI verde en GitHub (PR #1)</b>. Falta el tag <code>baseline-pre-refactor</code>.</td></tr>
+      <tr><td>F1</td><td>Contrato OpenAPI</td><td><span class="pill warn">borrador</span></td><td>27 rutas / 31 operaciones / 86 schemas de ≈ 64 rutas reales. Falta cubrirlas todas, tests de contrato, congelar v1 y generar clientes.</td></tr>
+      <tr><td>F2</td><td>Gateway</td><td><span class="pill bad">no iniciado</span></td><td>Nada. Depende de D4. (El nginx de producción ya limita intentos en <code>/api/auth/</code> y añade cabeceras.)</td></tr>
+      <tr><td>F3</td><td>Web aislado</td><td><span class="pill warn">parcial</span></td><td>Hotspots tipados, cliente API con headers <code>X-Mano-*</code>, sesión, <code>/pagos</code>. Falta cliente generado, páginas legacy, export estático y E2E en CI.</td></tr>
+      <tr><td>F4</td><td>Correcciones del backend</td><td><span class="pill warn">≈ 45 %</span></td><td>Pagos Wompi, secretos, seed, registro, historial de pagos y conciliación hechos. Falta <b>auto-confirm 24 h</b>, atribución guest, anti-fraude real, atomicidad de retiros, ads/Pro.</td></tr>
+      <tr><td>F5</td><td>Servicios laterales</td><td><span class="pill bad">no iniciado</span></td><td>auth-session, uploads, push y realtime: nada.</td></tr>
+      <tr><td>F6</td><td>Apps iOS y Android</td><td><span class="pill bad">no iniciado</span></td><td>Espera las imágenes mobile y la decisión D3.</td></tr>
+      <tr><td>F7</td><td>Endurecimiento</td><td><span class="pill bad">no iniciado</span></td><td>Solo hay respaldo de BD antes de cada despliegue. Faltan migraciones versionadas, carga y observabilidad.</td></tr>
+      <tr><td>F8</td><td>Promoción a remoto</td><td><span class="pill warn">adelantada</span></td><td>Despliegue manual con confirmación, imágenes por SHA, respaldo, salud y reversión ya escrito. Falta staging real, DNS/TLS y secretos en GitHub.</td></tr>
+    </table>
+    <p class="sub" style="margin-top:12px"><b>Desviación consciente (24 nov):</b> se sube el código y se prepara Azure <i>antes</i> de los gates, como despliegue de la arquitectura actual con llaves de <b>sandbox</b> de Wompi. No es la promoción completa: no cobrar dinero real hasta cerrar F4.4–F4.7.</p>
+  </div>
+</section>
+
+<!-- ============================ 1. ACTUAL ============================ -->
+<section id="actual">
+  <h2>1 · Arquitectura actual</h2>
+  <p class="sub">Un solo origen: nginx reparte <code>/</code> al web y <code>/api/*</code> al monolito Go. Todo vive en una VM de Azure con Docker Compose.</p>
+  <div class="card">
+  <svg viewBox="0 0 900 430" role="img" aria-label="Diagrama de la arquitectura actual">
+    <defs>
+      <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#7b8497"/></marker>
+      <marker id="al" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#bef264"/></marker>
+    </defs>
+
+    <rect class="box" x="30" y="170" width="140" height="64"/>
+    <text class="t" x="100" y="198" text-anchor="middle">Navegador</text>
+    <text class="s" x="100" y="216" text-anchor="middle">Web (único cliente)</text>
+
+    <rect class="box lime" x="230" y="170" width="150" height="64"/>
+    <text class="t" x="305" y="198" text-anchor="middle">nginx</text>
+    <text class="s" x="305" y="216" text-anchor="middle">:80 / :443 · TLS certbot</text>
+
+    <rect class="box blue" x="470" y="60" width="170" height="64"/>
+    <text class="t" x="555" y="88" text-anchor="middle">Frontend Next.js</text>
+    <text class="s" x="555" y="106" text-anchor="middle">:3000 · Pages Router</text>
+
+    <rect class="box blue" x="470" y="170" width="170" height="64"/>
+    <text class="t" x="555" y="198" text-anchor="middle">Backend Go (monolito)</text>
+    <text class="s" x="555" y="216" text-anchor="middle">Gin + GORM · :8080 · ~70 rutas</text>
+
+    <rect class="box" x="720" y="110" width="150" height="56"/>
+    <text class="t" x="795" y="136" text-anchor="middle">PostgreSQL 15</text>
+    <text class="s" x="795" y="153" text-anchor="middle">17 tablas · AutoMigrate</text>
+
+    <rect class="box dash" x="720" y="190" width="150" height="56"/>
+    <text class="t" x="795" y="216" text-anchor="middle">Redis 7</text>
+    <text class="s" x="795" y="233" text-anchor="middle">desplegado, sin uso</text>
+
+    <rect class="box violet" x="440" y="320" width="120" height="50"/>
+    <text class="t" x="500" y="343" text-anchor="middle">Wompi</text><text class="s" x="500" y="359" text-anchor="middle">pagos COP</text>
+    <rect class="box dash violet" x="590" y="320" width="120" height="50"/>
+    <text class="t" x="650" y="343" text-anchor="middle">Stripe</text><text class="s" x="650" y="359" text-anchor="middle">código legado</text>
+    <rect class="box violet" x="740" y="320" width="120" height="50"/>
+    <text class="t" x="800" y="343" text-anchor="middle">SMTP</text><text class="s" x="800" y="359" text-anchor="middle">email al negocio</text>
+
+    <path class="arrow" d="M170 202H228"/>
+    <path class="arrow lime" d="M380 190C420 190 420 100 468 94"/><text class="lbl" x="405" y="140">/*</text>
+    <path class="arrow lime" d="M380 205H468"/><text class="lbl" x="400" y="198">/api/*</text>
+    <path class="arrow" d="M640 195C680 195 690 150 718 140"/>
+    <path class="arrow dash" d="M640 215H718"/>
+    <path class="arrow" d="M520 236C510 280 505 300 500 318"/>
+    <path class="arrow dash" d="M580 236C610 280 640 300 650 318"/>
+    <path class="arrow" d="M610 236C680 270 760 290 790 318"/>
+    <text class="s" x="40" y="400">Wompi → webhook entra por nginx → /api/webhooks/wompi</text>
+  </svg>
+  <div class="legend">
+    <span><i style="background:#bef264"></i>punto de entrada</span>
+    <span><i style="background:#60a5fa"></i>código propio</span>
+    <span><i style="background:#a78bfa"></i>servicio externo</span>
+    <span>línea punteada = sin uso / legado</span>
+  </div>
+  </div>
+</section>
+
+<!-- ============================ 2. EJECUCION ============================ -->
+<section id="ejecucion">
+  <h2>2 · Quién corre dónde (lo más importante)</h2>
+  <p class="sub">Los frontends <b>no son servidores</b>: son clientes que se ejecutan en el dispositivo del usuario. Solo el web necesita hosting, y únicamente para entregar sus archivos.</p>
+  <div class="card" style="overflow-x:auto">
+  <table>
+    <tr><th>Cliente</th><th>Cómo llega al usuario</th><th>Dónde se ejecuta</th><th>¿Contenedor / servidor?</th></tr>
+    <tr><td><b>iOS</b></td><td>Se publica en App Store; el usuario la instala</td><td>En el iPhone</td><td><span class="pill ok">No</span></td></tr>
+    <tr><td><b>Android</b></td><td>Se publica en Google Play; el usuario la instala</td><td>En el teléfono</td><td><span class="pill ok">No</span></td></tr>
+    <tr><td><b>Web</b></td><td>El navegador descarga HTML/JS/CSS desde <code>mano.app</code></td><td>En el navegador</td><td><span class="pill warn">Solo hosting de archivos</span></td></tr>
+  </table>
+  <p class="sub" style="margin:10px 0 0">Una vez instalada/cargada, cada una hace lo mismo: peticiones HTTPS a <code>api.mano.app/v1</code> cuando hay conexión. De ahí en adelante todo es común: gateway → backend → BD → pagos → respuesta.</p>
+  </div>
+</section>
+
+<!-- ============================ 3. OBJETIVO ============================ -->
+<section id="objetivo">
+  <h2>3 · Arquitectura objetivo</h2>
+  <p class="sub">Cuatro capas: de dónde sale el software, dónde se ejecuta, el punto central (gateway) y el backend con sus datos.</p>
+  <div class="card">
+  <svg viewBox="0 0 960 660" role="img" aria-label="Diagrama de la arquitectura objetivo">
+    <defs>
+      <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#7b8497"/></marker>
+      <marker id="al2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#bef264"/></marker>
+    </defs>
+
+    <text class="s" x="20" y="16">DISTRIBUCIÓN — solo entregan el software, no están en el camino de la API</text>
+    <rect class="box violet" x="40"  y="26" width="240" height="56"/><text class="t" x="160" y="50" text-anchor="middle">App Store</text><text class="s" x="160" y="68" text-anchor="middle">publica la app iOS</text>
+    <rect class="box violet" x="360" y="26" width="240" height="56"/><text class="t" x="480" y="50" text-anchor="middle">Google Play</text><text class="s" x="480" y="68" text-anchor="middle">publica la app Android</text>
+    <rect class="box violet" x="680" y="26" width="240" height="56"/><text class="t" x="800" y="50" text-anchor="middle">Hosting del web</text><text class="s" x="800" y="68" text-anchor="middle">archivos estáticos · mano.app</text>
+
+    <rect x="20" y="118" width="920" height="132" rx="14" fill="none" stroke="#bef264" stroke-width="1.5" stroke-dasharray="7 6"/>
+    <text class="s" x="34" y="138" style="fill:#bef264">DISPOSITIVOS DEL USUARIO — aquí vive y se ejecuta el frontend</text>
+    <rect class="box blue" x="40"  y="156" width="240" height="76"/><text class="t" x="160" y="182" text-anchor="middle">App iOS</text><text class="s" x="160" y="200" text-anchor="middle">instalada en el iPhone</text><text class="s" x="160" y="216" text-anchor="middle">código nativo + cliente generado</text>
+    <rect class="box blue" x="360" y="156" width="240" height="76"/><text class="t" x="480" y="182" text-anchor="middle">App Android</text><text class="s" x="480" y="200" text-anchor="middle">instalada en el teléfono</text><text class="s" x="480" y="216" text-anchor="middle">código nativo + cliente generado</text>
+    <rect class="box blue" x="680" y="156" width="240" height="76"/><text class="t" x="800" y="182" text-anchor="middle">Navegador</text><text class="s" x="800" y="200" text-anchor="middle">ejecuta el JS descargado</text><text class="s" x="800" y="216" text-anchor="middle">cliente generado (TypeScript)</text>
+
+    <path class="arrow" d="M160 82V154"/><text class="lbl" x="170" y="108">instala (una vez)</text>
+    <path class="arrow" d="M480 82V154"/><text class="lbl" x="490" y="108">instala (una vez)</text>
+    <path class="arrow" d="M800 82V154"/><text class="lbl" x="810" y="108">descarga HTML/JS/CSS</text>
+
+    <rect x="20" y="276" width="920" height="372" rx="14" fill="none" stroke="#3a4152" stroke-width="1.5"/>
+    <text class="s" x="34" y="296">SERVIDOR (Azure) — API</text>
+
+    <path class="arrow lime" d="M160 232V338"/>
+    <path class="arrow lime" d="M480 232V338"/>
+    <path class="arrow lime" d="M800 232V338"/>
+    <text class="lbl" x="170" y="270">HTTPS</text>
+    <text class="lbl" x="490" y="270">api.mano.app/v1/* + headers X-Mano-Client · Client-Version · Device-Id</text>
+
+    <rect class="gw" x="40" y="340" width="880" height="84"/>
+    <text class="t" x="480" y="366" text-anchor="middle" style="fill:#bef264;font-size:16px">API GATEWAY — punto central único</text>
+    <text class="s" x="480" y="386" text-anchor="middle">identifica cliente y versión (426 si es muy vieja) · TLS · CORS · rate limit · /v1 → /api · allow-list</text>
+    <text class="s" x="480" y="404" text-anchor="middle">pre-chequeo JWT · request-id · métricas · /mock y /admin no públicos</text>
+
+    <rect class="box lime" x="40" y="466" width="400" height="104"/>
+    <text class="t" x="240" y="492" text-anchor="middle">mano-core (Go) — contrato congelado</text>
+    <text class="s" x="240" y="512" text-anchor="middle">auth · catálogo · órdenes · escrow · splits · referidos</text>
+    <text class="s" x="240" y="528" text-anchor="middle">dashboards · admin · delivery</text>
+    <text class="s" x="240" y="552" text-anchor="middle" style="fill:#fbbf24">cobros y webhooks con Wompi</text>
+
+    <rect class="box blue" x="480" y="466" width="440" height="104"/>
+    <text class="t" x="700" y="488" text-anchor="middle">Edge services (nuevos, opcionales)</text>
+    <text class="s" x="700" y="512" text-anchor="middle">auth-session (refresh) · uploads (R2) · push (FCM/APNs) · realtime</text>
+
+    <path class="arrow" d="M240 424V464"/><path class="arrow" d="M700 424V464"/>
+    <path class="arrow dash" d="M478 520H442"/>
+
+    <rect class="box" x="140" y="596" width="200" height="40"/><text class="t" x="240" y="621" text-anchor="middle">PostgreSQL</text>
+    <rect class="box" x="600" y="596" width="200" height="40"/><text class="t" x="700" y="621" text-anchor="middle">Redis</text>
+    <path class="arrow" d="M240 570V594"/><path class="arrow" d="M700 570V594"/>
+    <text class="s" x="470" y="621" text-anchor="middle">la respuesta vuelve por el mismo camino ↑</text>
+  </svg>
+  <div class="legend">
+    <span><i style="background:#bef264"></i>gateway / backend congelado</span>
+    <span><i style="background:#60a5fa"></i>software del cliente / servicios nuevos</span>
+    <span><i style="background:#a78bfa"></i>canales de distribución</span>
+  </div>
+  </div>
+
+  <div class="card" style="margin-top:14px;overflow-x:auto">
+    <b>Cómo se publica cada cliente</b>
+    <table style="margin-top:8px">
+      <tr><th>Cliente</th><th>Build</th><th>Canal</th><th>Tiempo hasta los usuarios</th></tr>
+      <tr><td>iOS</td><td>Xcode → <code>.ipa</code></td><td>TestFlight → App Review → App Store</td><td>días (revisión) + cuando el usuario actualiza</td></tr>
+      <tr><td>Android</td><td>Gradle → <code>.aab</code></td><td>Play Console → revisión → Google Play</td><td>horas/días + cuando el usuario actualiza</td></tr>
+      <tr><td>Web</td><td><code>build</code> → archivos estáticos</td><td>subida al hosting (VM con nginx / Azure Static Web Apps)</td><td>minutos, todos los usuarios a la vez</td></tr>
+    </table>
+    <p class="sub" style="margin:10px 0 0"><b>Consecuencia:</b> siempre habrá usuarios con apps de hace meses. El API debe seguir funcionando para esas versiones, por eso el contrato solo puede crecer de forma aditiva (cambios incompatibles ⇒ <code>/v2</code> conviviendo con <code>/v1</code>).</p>
+  </div>
+</section>
+
+<!-- ============================ 4. HEADERS ============================ -->
+<section id="headers">
+  <h2>4 · Cómo el sistema sabe de dónde viene la petición</h2>
+  <p class="sub">Cada cliente se identifica con headers en todas sus peticiones. El gateway los lee; el backend actual los ignora sin problema.</p>
+  <div class="card" style="overflow-x:auto">
+  <table>
+    <tr><th>Header</th><th>Lo envía</th><th>Ejemplo</th><th>Para qué sirve</th></tr>
+    <tr><td><code>X-Mano-Client</code></td><td>web · iOS · Android</td><td><code>ios</code></td><td>Métricas y límites por plataforma; CORS solo aplica a <code>web</code></td></tr>
+    <tr><td><code>X-Mano-Client-Version</code></td><td>los 3</td><td><code>1.4.2</code></td><td>Gateway responde <code>426 Upgrade Required</code> si está por debajo del mínimo</td></tr>
+    <tr><td><code>X-Mano-Build</code></td><td>móviles</td><td><code>214</code></td><td>Diagnóstico por build</td></tr>
+    <tr><td><code>X-Mano-Device-Id</code></td><td>los 3 (UUID de la instalación)</td><td><code>8f3c…</code></td><td>Rate limit por dispositivo, anti-abuso en endpoints guest</td></tr>
+    <tr><td><code>X-Request-Id</code></td><td>cliente o gateway</td><td><code>b21a…</code></td><td>Trazabilidad cliente → gateway → core</td></tr>
+    <tr><td><code>Authorization</code></td><td>tras login</td><td><code>Bearer eyJ…</code></td><td>Lo único que el backend ya entiende hoy</td></tr>
+    <tr><td><code>Origin</code></td><td>solo el navegador (automático)</td><td><code>https://mano.app</code></td><td>Validación CORS en el gateway</td></tr>
+  </table>
+  </div>
+  <div class="grid2" style="margin-top:14px">
+    <div class="card"><span class="pill warn">Ojo</span>
+      <p class="sub" style="margin:8px 0 0">Estos headers los puede falsificar cualquiera. Sirven para <b>enrutar, medir y gestionar versiones</b>, nunca para autorizar. La autorización sigue siendo el JWT y el rol que valida el backend. Para probar que la petición viene de una app legítima existen Apple App Attest y Google Play Integrity (opcional, más adelante).</p></div>
+    <div class="card"><span class="pill info">Backend congelado</span>
+      <p class="sub" style="margin:8px 0 0">Hoy "entiende" el origen el <b>gateway</b>, no el backend. Caso donde el backend sí tendría que saberlo: el <code>redirect_url</code> del pago Wompi (lo fija a <code>/orders</code> e ignora el del cliente). Por defecto se resuelve con Universal Links / App Links sobre <code>mano.app</code>, sin tocar el backend.</p></div>
+  </div>
+</section>
+
+<!-- ============================ 3. RUTEO ============================ -->
+<section id="ruteo">
+  <h2>5 · Qué hace el gateway con cada ruta</h2>
+  <p class="sub">El backend no valida rol en el router (lo hace dentro de cada handler), así que el gateway filtra y limita, pero no autoriza por rol.</p>
+  <div class="card" style="overflow-x:auto">
+  <table>
+    <tr><th>Path público</th><th>Destino</th><th>Política</th></tr>
+    <tr><td><code>/v1/auth/*</code></td><td>core <code>/api/auth/*</code> → luego <code>auth-session</code></td><td>rate limit estricto por IP y device-id</td></tr>
+    <tr><td><code>/v1/businesses</code>, <code>/products</code>, <code>/feed</code>, <code>/negocio/:slug</code>…</td><td>core <code>/api/…</code></td><td>público · CORS · cache corto en GET</td></tr>
+    <tr><td><code>/v1/orders/guest</code>, <code>/payments/wompi/guest</code>, <code>/r/:slug</code></td><td>core</td><td>público · rate limit estricto (anti-abuso)</td></tr>
+    <tr><td><code>/v1/orders</code>, <code>/sell/*</code>, <code>/dashboard/*</code>, <code>/me</code>…</td><td>core</td><td>JWT requerido (pre-chequeo) · rol lo valida el core</td></tr>
+    <tr><td><code>/v1/webhooks/wompi</code></td><td>core</td><td>solo POST · body ≤ 64 KB · sin CORS</td></tr>
+    <tr><td><code>/v1/uploads</code>, <code>/devices</code>, <code>/deliveries/:id/stream</code></td><td>edge services</td><td>JWT requerido</td></tr>
+    <tr><td><code>admin.mano.app/*</code></td><td>core <code>/api/admin/*</code></td><td>restringido por IP/VPN</td></tr>
+    <tr><td><code>mano.app/*</code></td><td>hosting de archivos del web (no pasa por el gateway de API)</td><td>solo entrega archivos + <code>apple-app-site-association</code> / <code>assetlinks.json</code></td></tr>
+    <tr><td><code>/v1/mock/*</code></td><td><span class="pill bad">no existe</span></td><td>solo en entornos locales</td></tr>
+  </table>
+  </div>
+</section>
+
+<!-- ============================ 4. FLUJO ============================ -->
+<section id="venta">
+  <h2>6 · Flujo de una venta por link de comisionista</h2>
+  <p class="sub">Así debería funcionar, con el estado real de cada paso en el código de hoy.</p>
+  <div class="flow">
+    <div class="step"><b>Comisionista se afilia</b><p><code>POST /sell/affiliate</code> genera el link <code>/r/{slug}</code>.</p><span class="pill ok">funciona</span></div>
+    <div class="step"><b>Comprador abre el link</b><p><code>GET /r/:slug</code> registra el click y devuelve producto.</p><span class="pill ok">funciona</span></div>
+    <div class="step bad"><b>Crea la orden guest</b><p>El web manda <code>referral_link_id</code>, el backend solo lee <code>freelancer_id</code>: se pierde el comisionista.</p><span class="pill bad">atribución perdida</span></div>
+    <div class="step bad"><b>Inicia pago Wompi</b><p>La firma de integridad usa HMAC; Wompi pide SHA256 simple.</p><span class="pill bad">firma incorrecta</span></div>
+    <div class="step bad"><b>Webhook "aprobado"</b><p>La verificación omite el <code>timestamp</code>; sin secreto acepta cualquier POST.</p><span class="pill bad">no confirma / forjable</span></div>
+    <div class="step"><b>Escrow retenido + splits</b><p>Orden <code>paid</code>, escrow <code>held</code>, splits plataforma / negocio / comisionista.</p><span class="pill ok">funciona (si llega el webhook)</span></div>
+    <div class="step"><b>Entrega</b><p>Delivery <code>scheduled → picked_up → in_transit → delivered</code>. Web hace polling cada 15 s.</p><span class="pill warn">sin tiempo real</span></div>
+    <div class="step bad"><b>Liberación del dinero</b><p>Solo si el comprador confirma. El auto-confirm de 24 h existe únicamente en endpoints mock.</p><span class="pill bad">sin auto-confirm</span></div>
+  </div>
+
+  <div class="card" style="margin-top:18px">
+    <b>Reparto de una venta de $120.000 (comisión del comisionista 20%)</b>
+    <div class="bar" style="margin-top:10px">
+      <div style="background:var(--green);width:76%">Negocio 76% · $91.200</div>
+      <div style="background:var(--amber);width:20%">Comisionista 20% · $24.000</div>
+      <div style="background:var(--lime);width:4%">4%</div>
+    </div>
+    <p class="sub" style="margin:8px 0 0">Plataforma: 4% fijo = $4.800. El dinero no llega a negocio ni comisionista hasta liberar el escrow.</p>
+  </div>
+</section>
+
+<!-- ============================ 5. ACOPLE ============================ -->
+<section id="acople">
+  <h2>7 · Qué ata hoy al web con el backend</h2>
+  <p class="sub">Esto es lo que hay que desacoplar para que web, iOS y Android sean intercambiables.</p>
+  <div class="card" style="overflow-x:auto">
+  <table>
+    <tr><th>Acoplamiento</th><th>Dónde</th><th>Qué hacer</th></tr>
+    <tr><td><code>fetch()</code> repetido, tipos por página</td><td>~20 páginas (<code>lib/api.ts</code> existe pero no se usa)</td><td>Cliente generado desde OpenAPI</td></tr>
+    <tr><td>JWT en <code>localStorage</code>, rol leído con <code>atob()</code></td><td>Header, admin, delivery</td><td>Interfaz <code>AuthStore</code> por plataforma</td></tr>
+    <tr><td>Mismo origen (<code>/api</code>) y <code>rewrites</code> de Next</td><td>nginx, <code>next.config.js</code>, Dockerfile</td><td>Web llama a <code>api.mano.app/v1</code></td></tr>
+    <tr><td>Backend sin CORS</td><td><code>router.go</code></td><td>CORS en el gateway</td></tr>
+    <tr><td>Carrito en <code>localStorage</code></td><td>cart, businesses/[id], negocio/[slug]</td><td>Módulo de dominio replicable en móvil</td></tr>
+    <tr><td><code>geolocation</code>, <code>clipboard</code>, redirect a Wompi, <code>prompt()</code></td><td>map, sell, r/[slug], admin</td><td>Equivalentes nativos / in-app browser</td></tr>
+    <tr><td>Retorno de pago fijo a <code>APP_BASE_URL/orders</code></td><td><code>handlers_wompi.go</code></td><td>Universal Links / App Links en <code>mano.app</code></td></tr>
+    <tr><td>Pantallas = JPEG + botones invisibles</td><td>index, signup, profile</td><td>Rediseñar como componentes reales</td></tr>
+  </table>
+  </div>
+</section>
+
+<!-- ============================ 6. HALLAZGOS ============================ -->
+<section id="hallazgos">
+  <h2>8 · Hallazgos que chocan con "backend inmutable"</h2>
+  <p class="sub">Un gateway no puede resolver los marcados en rojo; requieren tocar el código sin cambiar el contrato.</p>
+  <div class="grid2">
+    <div class="card"><span class="pill bad">Crítico</span>
+      <ul>
+        <li><s>Firma de integridad Wompi con HMAC</s> <span class="pill ok">corregido 24-nov</span></li>
+        <li><s>Webhook Wompi omite <code>timestamp</code></s> <span class="pill ok">corregido 24-nov</span></li>
+        <li><s>Webhook acepta todo sin <code>WOMPI_EVENTS_SECRET</code></s> <span class="pill ok">corregido 24-nov</span></li>
+        <li>Sin auto-confirm de 24 h fuera de mock</li>
+        <li>Paquetes de publicidad y Plan Pro se activan sin cobrar</li>
+        <li><s>Seed con <code>password123</code> en producción</s> <span class="pill ok">corregido 24-nov</span></li>
+      </ul></div>
+    <div class="card"><span class="pill warn">Alto / medio</span>
+      <ul>
+        <li>Atribución del comisionista perdida en compra guest</li>
+        <li>Anti-fraude (misma cédula) solo en el flujo mock</li>
+        <li>Dinero sin transacciones de BD en retiros y liberación de escrow <span class="pill warn">parcial</span> (el webhook ya es atómico e idempotente)</li>
+        <li>Ruta Stripe en USD que se salta el escrow</li>
+        <li><s><code>JWT_SECRET</code> con valor por defecto</s> <span class="pill ok">corregido 24-nov</span> (el backend no arranca así)</li>
+        <li>Rol <code>courier</code> inexistente; KYC a medias</li>
+      </ul></div>
+  </div>
+  <p class="sub" style="margin-top:12px">Un gateway sí mitiga: bloquear <code>/mock</code> y <code>/admin</code> públicos, rate limit, CORS, límites de tamaño, TLS.</p>
+</section>
+
+<!-- ============================ 7. FASES ============================ -->
+<section id="fases">
+  <h2>9 · Fases del refactor</h2>
+  <p class="sub">Numeración original de este documento (Fase 0–5). En <code>MIGRATION_PLAN.md</code> las mismas etapas se detallan como F0–F8 (ahí F4 = correcciones del backend y F8 = promoción a remoto). El estado de cada una está arriba, en "Avance real".</p>
+  <div class="card">
+    <div class="phase"><h4>Fase 0</h4><span class="pill warn" style="float:right">borrador 27 rutas</span><div>Escribir <code>openapi.yaml</code> + tests de contrato en CI; añadir <code>go test</code>/<code>vet</code> al pipeline.</div><span class="pill ok">no toca backend</span></div>
+    <div class="phase"><h4>Fase 1</h4><span class="pill bad" style="float:right">no iniciada</span><div>Gateway delante del core: allow-list, CORS, rate limit, <code>/v1→/api</code>, <code>api.mano.app</code> con TLS; alias <code>/api</code> para el web actual.</div><span class="pill ok">no toca backend</span></div>
+    <div class="phase"><h4>Fase 2</h4><span class="pill warn" style="float:right">parcial</span><div>Web usa el cliente generado contra <code>api.mano.app/v1</code>, envía los headers de cliente y se publica como archivos estáticos (desaparece el contenedor del frontend).</div><span class="pill ok">no toca backend</span></div>
+    <div class="phase"><h4>Fase 3</h4><span class="pill bad" style="float:right">no iniciada</span><div>Edge services: <code>auth-session</code> y <code>uploads</code>.</div><span class="pill ok">no toca backend</span></div>
+    <div class="phase"><h4>Fase 4</h4><span class="pill bad" style="float:right">no iniciada</span><div>Apps iOS y Android sobre el contrato (+ push, deep links); publicación por TestFlight/Play, no por servidores.</div><span class="pill ok">no toca backend</span></div>
+    <div class="phase"><h4>Fase 5</h4><span class="pill bad" style="float:right">no iniciada</span><div><code>realtime</code>, observabilidad y endurecimiento.</div><span class="pill ok">no toca backend</span></div>
+    <div class="phase"><h4>Transversal</h4><span class="pill warn" style="float:right">≈ 45 %</span><div>Corregir los hallazgos críticos de la sección 6 sin alterar el contrato.</div><span class="pill bad">toca código</span></div>
+  </div>
+</section>
+
+<!-- ============================ 8. DECISIONES ============================ -->
+<section id="decisiones">
+  <h2>10 · Decisiones abiertas</h2>
+  <div class="card">
+  <table>
+    <tr><th>#</th><th>Pregunta</th><th>Recomendación</th></tr>
+    <tr><td>D1</td><td>¿"Backend inmutable" = contrato o código?</td><td><span class="pill ok">decidida</span> contrato congelado, código corregible</td></tr>
+    <tr><td>D2</td><td>Auto-confirm 24 h: ¿worker interno o job externo?</td><td>Worker interno (no hay endpoint no-mock al que llamar). <span class="pill warn">sigue pendiente y bloquea cobrar dinero real</span></td></tr>
+    <tr><td>D3</td><td>Móvil: ¿nativo o React Native/Expo?</td><td>Depende de equipo; RN reutiliza el cliente TS</td></tr>
+    <tr><td>D4</td><td>Gateway</td><td>Kong DB-less (alternativas: Traefik, nginx)</td></tr>
+    <tr><td>D5</td><td>Dominios <code>api.</code> y <code>admin.</code></td><td>Sí</td></tr>
+    <tr><td>D6</td><td>Rol <code>courier</code> en el contrato</td><td><span class="pill ok">decidida</span> se programa (<code>courier</code> y <code>service_provider</code>, aditivo)</td></tr>
+    <tr><td>D7</td><td>Alcance del contrato v1</td><td>Rutas usadas hoy primero, el resto por demanda</td></tr>
+    <tr><td>D8</td><td>Hosting del web: ¿export estático o Next.js standalone? ¿VM Azure con nginx o Static Web Apps/CDN?</td><td>Export estático (ajustar 4 rutas dinámicas)</td></tr>
+    <tr><td>D9</td><td>Nombres de headers de cliente y política de versión mínima (<code>426</code>)</td><td><code>X-Mano-Client*</code>; soportar las últimas N versiones</td></tr>
+  </table>
+  </div>
+</section>
+
+<!-- ============================ 11. COSTOS ============================ -->
+<section id="costos">
+  <h2>11 · Costos</h2>
+  <p class="sub">Corte 24 nov 2026 · USD por mes, precio de lista de Azure (región eastus, API oficial de precios), sin impuestos ni descuentos · COP con TRM supuesta de $3.500. Detalle, supuestos y fuentes en <code>docs/COSTS.md</code>. Regla permanente: <b>todo cambio de infraestructura actualiza este apartado y <code>COSTS.md</code></b>.</p>
+
+  <div class="card">
+    <div class="kpi">
+      <div><b>≈ $39</b><span>hoy: 1 VM de Azure (≈ 138 mil COP/mes)</span></div>
+      <div><b>$76 – 90</b><span>refactor económico (Kong + servicios en la VM)</span></div>
+      <div><b>$82 – 150</b><span>refactor administrado ligero</span></div>
+      <div><b>≈ $580</b><span>con SLA/HA (APIM Basic v2 + BD con réplica)</span></div>
+    </div>
+    <p class="sub" style="margin:0">Si la VM está apagada (desasignada) solo cobran el disco y la IP: ≈ $9/mes.</p>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <span class="pill bad">Hallazgo crítico</span>
+    <p style="margin:8px 0 6px"><b>La comisión del 4 % de la plataforma no cubre la tarifa de Wompi en pedidos pequeños.</b> Wompi cobra <code>2,65 % + $700 + IVA</code> por transacción exitosa: eso supera el 4 % en cualquier pedido menor de <b>≈ $98.400 COP</b>. Es un costo mayor que toda la infraestructura.</p>
+    <table>
+      <tr><th>Pedido</th><th>Tarifa Wompi</th><th>Comisión 4 %</th><th>Margen</th></tr>
+      <tr><td>$10.000</td><td>$1.148 (11,5 %)</td><td>$400</td><td><span class="pill bad">−$748</span></td></tr>
+      <tr><td>$60.000</td><td>$2.725 (4,5 %)</td><td>$2.400</td><td><span class="pill bad">−$325</span></td></tr>
+      <tr><td>$98.400</td><td>$3.936 (4,0 %)</td><td>$3.936</td><td><span class="pill warn">equilibrio</span></td></tr>
+      <tr><td>$120.000</td><td>$4.617 (3,85 %)</td><td>$4.800</td><td><span class="pill ok">+$183</span></td></tr>
+    </table>
+    <p class="sub" style="margin-top:8px">Hoy el reparto no descuenta la tarifa de Wompi de nadie: la absorbe la plataforma. Decisión de producto pendiente (cargo al comprador, mínimo por pedido, repartir entre negocio y comisionista, negociar tarifa).</p>
+  </div>
+
+  <div class="grid2" style="margin-top:14px">
+    <div class="card">
+      <h4 style="margin:0 0 8px">Infraestructura de hoy</h4>
+      <table>
+        <tr><th>Componente</th><th>USD/mes</th></tr>
+        <tr><td>VM <code>Standard_B2s</code> (2 vCPU, 4 GB) <span class="pill warn">supuesto</span></td><td>30,37</td></tr>
+        <tr><td>Disco del SO (30 GB, Premium P4)</td><td>5,28</td></tr>
+        <tr><td>IP pública estática</td><td>3,65</td></tr>
+        <tr><td>NIC, red virtual, NSG</td><td>0</td></tr>
+        <tr><td><b>Total Azure</b></td><td><b>≈ 39,30</b></td></tr>
+      </table>
+      <p class="sub" style="margin:8px 0 0">La suscripción está <i>Disabled</i> y no se pudo leer el tamaño real de la VM; se asumió B2s (lo documentado). Verificar en Cost Management.</p>
+    </div>
+    <div class="card">
+      <h4 style="margin:0 0 8px">Piezas nuevas del refactor</h4>
+      <table>
+        <tr><th>Pieza</th><th>USD/mes</th></tr>
+        <tr><td>Gateway Kong/nginx en la VM</td><td>0</td></tr>
+        <tr><td>APIM Consumption</td><td>0 (1 M llamadas) + $3,50/M</td></tr>
+        <tr><td>APIM Developer (sin SLA) / Basic v2</td><td>48 / <b>150</b></td></tr>
+        <tr><td>APIM Standard v2 / Premium</td><td>700 / 2.795</td></tr>
+        <tr><td>Container Apps (5 servicios + core) <span class="pill warn">estimado</span></td><td>≈ 46</td></tr>
+        <tr><td>PostgreSQL Flexible (mín. / B2ms)</td><td>≈ 17 / 114</td></tr>
+        <tr><td>Redis Basic C0 / Standard C0</td><td>16 / 40</td></tr>
+        <tr><td>Static Web Apps Free / Standard</td><td>0 / 9</td></tr>
+        <tr><td>Blob (fotos) por GB · Front Door Standard</td><td>0,021 · 35</td></tr>
+        <tr><td>Push (FCM/APNs) · Apple $99/año · Google $25 una vez</td><td>0</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h4 style="margin:0 0 8px">Proyección mensual (USD) por etapa</h4>
+    <table>
+      <tr><th>Arquitectura</th><th>Piloto<br><span class="s">100 pedidos · 500 usuarios</span></th><th>Crecimiento<br><span class="s">1.000 · 5.000</span></th><th>Escala<br><span class="s">10.000 · 50.000</span></th></tr>
+      <tr><td>Hoy: monolito en 1 VM</td><td>39</td><td>39</td><td>172 <span class="pill warn">1 solo servidor</span></td></tr>
+      <tr><td>A · Refactor económico (Kong + servicios en la VM)</td><td>76</td><td>90</td><td>281 <span class="s">(≈ 203 con CDN gratis)</span></td></tr>
+      <tr><td>B · Administrado ligero (APIM Consumption + Container Apps + BD gestionada)</td><td>82</td><td>150</td><td>433</td></tr>
+      <tr><td>C · Administrado con SLA/HA (APIM Basic v2 + BD con réplica + Front Door)</td><td colspan="3">≈ 578 de piso, sube con la escala</td></tr>
+    </table>
+    <p class="sub" style="margin-top:8px">⚠ Container Apps muestra un cargo de entorno de ≈ $73/mes desde sept-2026; no se confirmó si aplica al plan de consumo. El ancho de banda lo domina el peso de las imágenes del diseñador (≈ 1 TB/mes con 50.000 usuarios ≈ $78): pedir una exportación liviana y poner un CDN gratuito delante.</p>
+  </div>
+
+  <div class="card" style="margin-top:14px" id="alternativas-pago">
+    <h4 style="margin:0 0 6px">¿Hay un proveedor de pagos más barato que Wompi?</h4>
+    <p class="sub" style="margin:0 0 10px"><b>Respuesta corta: no en tarjetas.</b> Todas cobran entre 2,5 % y 3,3 % + un fijo de $300 a $900 + IVA, y la diferencia entre la más cara y la más barata es de medio punto. Lo que sí baja el costo es el <b>método de pago</b>: PSE (tarifa fija) y Bre-B (≈ $0).</p>
+    <table>
+      <tr><th>Opción (tarifa de lista, + IVA 19 % sobre la comisión)</th><th>Pedido $20.000</th><th>$60.000</th><th>$120.000</th><th>$250.000</th><th>Pedido mínimo para no perder con el 4 %</th></tr>
+      <tr><td><b>Wompi</b> · 2,65 % + $700 <span class="pill ok">oficial</span></td><td>$1.464 (7,3 %)</td><td>$2.725 (4,5 %)</td><td>$4.617 (3,8 %)</td><td>$8.717 (3,5 %)</td><td>$98.400</td></tr>
+      <tr><td>ePayco/Davipay con cuenta Davivienda · 2,64 % + $690 <span class="pill warn">tercero</span></td><td>$1.449</td><td>$2.706 (4,5 %)</td><td>$4.591</td><td>$8.675</td><td>$95.700</td></tr>
+      <tr><td>Credibanco "Chebre" · 2,5 % + $800 <span class="pill warn">tercero</span></td><td>$1.547</td><td>$2.737 (4,6 %)</td><td>$4.522</td><td>$8.390</td><td>$92.900</td></tr>
+      <tr><td>ePayco estándar / Bold · 2,99 % + $900 <span class="pill warn">tercero</span></td><td>$1.783</td><td>$3.206 (5,3 %)</td><td>$5.341</td><td>$9.966</td><td>≈ $242.000</td></tr>
+      <tr><td>PayU · 3,29 % + $300 <span class="pill warn">fuentes distintas</span></td><td>$1.140</td><td>$2.706 (4,5 %)</td><td>$5.055</td><td>$10.145</td><td>≈ $420.000</td></tr>
+      <tr><td>Mercado Pago (giro inmediato) · 3,29 % + $800 <span class="pill warn">tercero</span></td><td>$1.735</td><td>$3.301 (5,5 %)</td><td>$5.650</td><td>$10.740</td><td>casi nunca</td></tr>
+      <tr><td><b>PSE</b> con tarifa fija de $1.500 <span class="pill warn">referencia de mercado</span></td><td>$1.785 (8,9 %)</td><td><b>$1.785 (3,0 %)</b></td><td><b>$1.785 (1,5 %)</b></td><td><b>$1.785 (0,7 %)</b></td><td><b>$44.600</b></td></tr>
+      <tr><td>PSE con tarifa fija de $2.500</td><td>$2.975</td><td>$2.975 (5,0 %)</td><td>$2.975 (2,5 %)</td><td>$2.975 (1,2 %)</td><td>$74.400</td></tr>
+      <tr><td><b>Bre-B</b> (pago inmediato por llave o QR) <span class="pill info">por cotizar</span></td><td colspan="4">≈ $0 para el comercio según Bancolombia y Bold (plan básico / QR Pro); depende del contrato y del banco</td><td>sin límite</td></tr>
+      <tr><td>Efectivo (Efecty, Baloto, corresponsales como Puntored) <span class="pill warn">referencia</span></td><td colspan="4">≈ 3,5 % de referencia vía una pasarela; solo cuenta cuando el cliente paga; Puntored no publica tarifas</td><td>—</td></tr>
+    </table>
+    <p class="sub" style="margin:10px 0 4px"><b>Qué significa para Mano App</b></p>
+    <ul style="margin:0 0 6px;padding-left:20px">
+      <li><b>Cambiar de proveedor de tarjeta no arregla el margen.</b> Pasar de Wompi a Davipay ahorra ≈ $19 COP por pedido de $60.000 (≈ $5 USD/mes con 1.000 pedidos) y cuesta días de integración, pruebas y soporte. Ningún plan de tarjeta cierra el hueco por debajo de ≈ $93.000.</li>
+      <li><b>Lo que sí mueve el costo:</b> empujar <b>PSE</b> y <b>Bre-B</b> en el checkout (en un pedido de $60.000 PSE ahorra ≈ $940 frente a la tarjeta) y corregir el modelo de precio: cargo de servicio al comprador, mínimo por pedido o repartir la tarifa.</li>
+      <li><b>Wompi sigue siendo razonable:</b> ya está integrado y probado, tiene checkout embebido, $0 de dispersión a cuentas Bancolombia y cobra solo si el pago es exitoso. Pregunta a Wompi si tu plan cobra PSE con tarifa fija en vez del 2,65 %.</li>
+      <li><b>Mano App es un marketplace:</b> retiene el dinero (escrow) y lo reparte entre negocio, comisionista y plataforma. Un proveedor más barato que no ofrezca reparto o pagos a terceros no sirve. Wompi tiene "Pagos a terceros" (por cotizar); Mercado Pago ofrece pagos divididos para marketplaces. Antes de cambiar, validar el reparto y los costos de retiro.</li>
+      <li><b>Impuestos:</b> los pagos con tarjeta llevan retenciones de ley (ReteFuente ≈ 1,5 %, ReteIVA, ReteICA) que se descuentan al girar el dinero y son anticipo de impuestos; PSE y Nequi no las llevan. Consultarlo con un contador.</li>
+    </ul>
+    <p class="sub" style="margin:0">Fuentes: página oficial de tarifas de Wompi y comparativas colombianas de 2026 (Bran-D, Alejandro Verjel, BTO Digital, Guía de Software, OrbitLab, Credantus, Bancolombia, Bold). Las tarifas de terceros <b>no son oficiales</b>, varían por contrato y volumen y algunas fuentes no coinciden (marcadas). Detalle y fórmulas en <code>docs/COSTS.md</code> §5b.</p>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h4 style="margin:0 0 8px">Recomendación</h4>
+    <ol style="margin:0;padding-left:20px">
+      <li><b>Hoy:</b> apagar (desasignar) la VM mientras no se use (ahorra ≈ $30/mes) y activar un presupuesto con alertas en Cost Management.</li>
+      <li><b>Refactor:</b> empezar con la opción A (≈ $76–90/mes). Pasar a B al necesitar BD gestionada y escalado. APIM Basic v2 ($150) solo si se quiere portal, políticas y SLA de Microsoft; de $700 en adelante no se justifica a este tamaño.</li>
+      <li><b>Antes de cobrar dinero real:</b> resolver la tarifa de Wompi (arriba). Es el mayor costo. Cambiar de proveedor de tarjeta no la resuelve; sí ayudan PSE, Bre-B y un cargo de servicio.</li>
+    </ol>
+  </div>
+</section>
+
+</main>
+<footer>Costos: precios de la API oficial de Azure (24 nov 2026) y tarifa de lista de Wompi; supuestos y límites en <code>docs/COSTS.md</code>. Hallazgos 1 y 2 (firma de integridad y checksum del webhook) contrastados con la documentación oficial de Wompi y ya corregidos y probados contra el sandbox. El avance real sale de <code>docs/MIGRATION_PLAN.md</code> y de las pruebas ejecutadas el 24 nov 2026.</footer>
+</body>
+</html>

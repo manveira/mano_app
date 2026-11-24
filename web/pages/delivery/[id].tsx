@@ -79,7 +79,7 @@ export default function DeliveryPage() {
 
   const currentStep = STATUS_STEPS.indexOf(delivery.status)
   const nextStatus = STATUS_NEXT[delivery.status]
-  const canUpdate = role === 'business_owner' && nextStatus
+  const canUpdate = (role === 'business_owner' || role === 'courier') && nextStatus
 
   return (
     <div className="container">

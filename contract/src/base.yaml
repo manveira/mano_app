@@ -1,0 +1,102 @@
+openapi: 3.0.3
+info:
+  title: Mano App API
+  version: 1.0.0-draft
+  description: |
+    Contrato del API de Mano App (marketplace local: negocios, comisionistas y compradores).
+
+    **Este contrato describe el comportamiento REAL del backend actual (Go/Gin) tal cual es, incluidas sus
+    inconsistencias.** Una vez congelado (`contract-v1.0.0`) solo se permiten cambios aditivos; los cambios
+    incompatibles van a `/v2`.
+
+    ## Acceso
+    Todos los clientes (web, iOS, Android) hablan **solo con el API Gateway**: `https://api.mano.app/v1`.
+    En local: gateway `http://localhost:8000/v1`; backend directo (temporal) `http://localhost:8080/api`.
+
+    ## Headers de cliente (los envía todo cliente; el gateway los usa, el backend actual los ignora)
+    | Header | Valor | Uso |
+    |---|---|---|
+    | `X-Mano-Client` | `web` \| `ios` \| `android` | métricas, límites por plataforma |
+    | `X-Mano-Client-Version` | semver, p. ej. `1.4.2` | el gateway responde `426` si es inferior al mínimo |
+    | `X-Mano-Build` | número de build (móviles) | diagnóstico |
+    | `X-Mano-Device-Id` | UUID de la instalación | límites por dispositivo, anti-abuso |
+    | `X-Request-Id` | UUID (opcional) | trazabilidad |
+
+    Los headers de cliente **no autorizan**: son falsificables. La autorización es el JWT.
+
+    ## Convenciones reales del backend (no se "arreglan" en v1)
+    - JSON en `snake_case`. Montos en COP como número (`float64`); en `WompiTransaction.amount` están en centavos.
+    - Errores: `{"error": "mensaje"}` con el código HTTP correspondiente.
+    - Respuestas **inconsistentes**: unas listas vienen envueltas (`{"businesses":[...]}`), unos recursos envueltos
+      (`{"order":{...}}`) y otros directos (`POST /orders` devuelve la orden sin envolver).
+    - Las listas vacías pueden llegar como `null` (no `[]`): los clientes deben tolerarlo.
+    - Los structs anidados de GORM (`business`, `delivery`, `product`, …) están **siempre presentes** en el JSON de
+      `Order`/`OrderItem`/`ReferralLink`, con valores cero (`id: 0`) cuando no fueron precargados.
+    - Fechas ISO-8601 (`2026-10-27T10:00:00Z`). Una fecha sin asignar llega como `0001-01-01T00:00:00Z`.
+    - Autenticación: `Authorization: Bearer <JWT>` (HS256, 72 h). Roles: `customer`, `business_owner`, `freelancer`, `admin`.
+  contact:
+    name: Mano App
+servers:
+  - url: http://localhost:8000/v1
+    description: Gateway local (a partir de la fase F2)
+  - url: http://localhost:8080/api
+    description: Backend directo local (temporal, hasta F2)
+  - url: https://api.mano.app/v1
+    description: Producción (fase F8)
+tags:
+  - name: Health
+  - name: Auth
+  - name: Usuario
+  - name: Negocios
+  - name: Productos
+  - name: Órdenes
+  - name: Pagos
+  - name: Entregas
+  - name: Comisionistas
+  - name: Referidos
+  - name: Dashboards
+  - name: Social
+  - name: Publicidad
+  - name: Mapa
+  - name: Admin
+  - name: Webhooks
+security: []
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT HS256 obtenido en `POST /auth/signin` (72 h).
+  parameters:
+    IdPath:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer, format: int64, minimum: 1 }
+  responses:
+    BadRequest:
+      description: Petición inválida (validación, JSON mal formado, regla de negocio).
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Falta el token, es inválido o expiró.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: El rol o la propiedad del recurso no permiten la operación.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Recurso inexistente.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ServerError:
+      description: Error interno.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }

@@ -1,0 +1,338 @@
+# Schemas propios del dominio Comisionistas / Referidos / Dashboards (verificados contra el backend en vivo).
+
+SellAffiliateRequest:
+  type: object
+  required: [product_id]
+  properties:
+    product_id:
+      type: integer
+      format: int64
+      minimum: 1
+      description: |
+        ID del producto. Se bindea a `uint`: un string o un negativo falla el JSON (400 con mensaje de Go).
+        `0` también falla (`required` de gin trata el cero como ausente).
+
+SellAffiliateResponse:
+  type: object
+  description: |
+    Respuesta de `POST /sell/affiliate`. Tiene DOS formas según el caso:
+    - **201** (link nuevo): `referral_link` + `url` (sin `message`).
+    - **200** (ya afiliado): `referral_link` + `message: "already affiliated"` (sin `url`).
+    En ambos casos `referral_link.freelancer` y `referral_link.product` vienen con valores cero (`id: 0`), no precargados.
+  required: [referral_link]
+  properties:
+    referral_link: { $ref: '#/components/schemas/ReferralLink' }
+    url:
+      type: string
+      description: "Solo en 201. `APP_BASE_URL` + `/r/` + slug (en local `http://localhost:3000`; por defecto `https://mano.app`)."
+      example: http://localhost:3000/r/hamaca-artesanal-24-kgz1
+    message:
+      type: string
+      description: Solo en 200.
+      example: already affiliated
+
+SellLink:
+  description: ReferralLink con `url` añadido (struct embebido en Go). `product` viene precargado; `freelancer` viene con ceros.
+  allOf:
+    - $ref: '#/components/schemas/ReferralLink'
+    - type: object
+      properties:
+        url:
+          type: string
+          example: http://localhost:3000/r/hamaca-artesanal-24-kgz1
+
+SellLinksResponse:
+  type: object
+  required: [links, earnings_balance]
+  properties:
+    links:
+      type: array
+      description: Solo links activos del comisionista. Vacío => `[]` (no `null`).
+      items: { $ref: '#/components/schemas/SellLink' }
+    earnings_balance:
+      type: number
+      description: Saldo acumulado en COP.
+      example: 24000
+
+SellReferralCodeResponse:
+  type: object
+  required: [referral_code, referral_url, referred_count, bonus_per_referral]
+  properties:
+    referral_code: { type: string, example: testLC9E3D }
+    referral_url:
+      type: string
+      description: "`APP_BASE_URL` + `/signup?ref=` + código."
+      example: http://localhost:3000/signup?ref=testLC9E3D
+    referred_count:
+      type: integer
+      format: int64
+      description: Usuarios con `referred_by` igual al usuario autenticado.
+    bonus_per_referral:
+      type: integer
+      description: Constante fija en el handler (5000 COP); no se lee de configuración.
+      example: 5000
+
+SellLinkStat:
+  type: object
+  required: [slug, product_name, clicks, conversions, conversion_rate_pct, earned_total]
+  properties:
+    slug: { type: string }
+    product_name: { type: string }
+    clicks: { type: integer }
+    conversions: { type: integer }
+    conversion_rate_pct:
+      type: number
+      description: conversions / clicks * 100 (0 si clicks = 0, aunque haya conversiones). Puede superar 100.
+    earned_total:
+      type: number
+      description: "Estimado = conversions × price × commission_rate (con el precio/tasa ACTUALES del producto, no con lo realmente pagado)."
+
+SellStatsResponse:
+  type: object
+  required: [links, total_balance, plan_expires]
+  properties:
+    links:
+      type: array
+      items: { $ref: '#/components/schemas/SellLinkStat' }
+    total_balance:
+      type: number
+      description: Saldo actual (`earnings_balance`) en COP.
+    plan_expires:
+      type: string
+      format: date-time
+      nullable: true
+      description: Vencimiento del plan Pro; `null` si el plan Pro no tiene vencimiento.
+
+SellWithdrawRequest:
+  type: object
+  required: [amount, nequi_number]
+  properties:
+    amount:
+      type: number
+      description: |
+        COP. Validación gin: `required,gt=0` (0 o ausente => error de `required`; negativo => error de `gt`).
+        Después, en orden: saldo suficiente (400 `insufficient balance`) y luego mínimo 5000 (400).
+      example: 6000
+    nequi_number:
+      type: string
+      description: Obligatorio, sin validación de formato.
+      example: '3009990001'
+
+SellWithdrawResponse:
+  type: object
+  required: [withdrawal, remaining_balance, message]
+  properties:
+    withdrawal: { $ref: '#/components/schemas/WithdrawalRequest' }
+    remaining_balance:
+      type: number
+      description: Saldo tras descontar el retiro.
+      example: 18000
+    message:
+      type: string
+      example: Withdrawal request created. Processing in 1-2 business days.
+
+SellInsufficientBalanceError:
+  type: object
+  description: Único error del backend que añade un campo extra además de `error`.
+  required: [error, balance]
+  properties:
+    error: { type: string, example: insufficient balance }
+    balance:
+      type: number
+      description: Saldo actual del comisionista.
+      example: 24000
+
+SellUpgradeProResponse:
+  type: object
+  required: [plan, plan_expires_at, message]
+  properties:
+    plan: { type: string, enum: [pro], example: pro }
+    plan_expires_at:
+      type: string
+      format: date-time
+      description: Ahora + 30 días. Se SOBRESCRIBE (no se acumula) si ya era Pro.
+    message: { type: string, example: Plan Pro activado por 30 días }
+
+SellReferralClickResponse:
+  type: object
+  required: [product, referral_link_id, business_id]
+  properties:
+    product: { $ref: '#/components/schemas/Product' }
+    referral_link_id: { type: integer, format: int64, example: 1 }
+    business_id: { type: integer, format: int64, example: 2 }
+
+SellStorefrontProduct:
+  type: object
+  required: [id, name, description, price, image_url, commission_rate, referral_slug, referral_url]
+  properties:
+    id: { type: integer, format: int64 }
+    name: { type: string }
+    description: { type: string }
+    price: { type: number }
+    image_url: { type: string }
+    commission_rate: { type: number }
+    business_id: { type: integer, format: int64, description: "Añadido en v1.1 (aditivo): necesario para armar el carrito" }
+    referral_slug: { type: string }
+    referral_url:
+      type: string
+      description: "`APP_BASE_URL` + `/r/` + slug."
+
+SellStorefrontResponse:
+  type: object
+  required: [freelancer, products]
+  properties:
+    freelancer:
+      type: object
+      required: [name, username]
+      properties:
+        name: { type: string, example: María García }
+        username: { type: string, example: maria }
+    products:
+      type: array
+      description: Solo links activos con producto activo. Sin ninguno => `[]`. No se ordena de forma garantizada.
+      items: { $ref: '#/components/schemas/SellStorefrontProduct' }
+
+BusinessDashboardEntry:
+  type: object
+  required: [business_id, name, orders, revenue]
+  properties:
+    business_id: { type: integer, format: int64 }
+    name: { type: string }
+    orders:
+      type: integer
+      format: int64
+      description: Órdenes con status en (`pending`, `completed`, `delivered`). NOTA - `pending` no es un status real de orden (es `pending_payment`) y se excluyen `paid`/`dispatched`/`in_transit`.
+    revenue:
+      type: number
+      description: Suma de `total_amount` de esas mismas órdenes.
+
+BusinessDashboardResponse:
+  type: object
+  required: [dashboard]
+  properties:
+    dashboard:
+      type: array
+      description: Un elemento por negocio del owner (incluye no aprobados). Sin negocios => `[]`.
+      items: { $ref: '#/components/schemas/BusinessDashboardEntry' }
+
+BusinessStatsDaySale:
+  type: object
+  required: [day, orders, revenue]
+  properties:
+    day:
+      type: string
+      format: date-time
+      description: Día (agrupado por `DATE(created_at)`) serializado como medianoche UTC, p. ej. `2026-10-28T00:00:00Z` (no es una fecha `YYYY-MM-DD`).
+    orders: { type: integer, format: int64 }
+    revenue: { type: number }
+
+BusinessStatsTopProduct:
+  type: object
+  required: [product_id, product_name, quantity_sold, revenue]
+  properties:
+    product_id: { type: integer, format: int64 }
+    product_name: { type: string }
+    quantity_sold: { type: integer, format: int64 }
+    revenue: { type: number }
+
+BusinessStatsTopFreelancer:
+  type: object
+  required: [freelancer_id, freelancer_name, sales, commission_earned]
+  properties:
+    freelancer_id: { type: integer, format: int64 }
+    freelancer_name: { type: string }
+    sales: { type: integer, format: int64 }
+    commission_earned:
+      type: number
+      description: "DEFECTO CONOCIDO: siempre 0. El SQL usa el alias `commission_earned` y el struct Go tiene el campo `Commission`, por lo que GORM no lo mapea."
+      example: 0
+
+BusinessDashboardStatsResponse:
+  type: object
+  description: |
+    Los arrays pueden ser `null` cuando el negocio existe pero no hay filas (Scan sobre slice nil). Si el owner no
+    tiene negocios, el backend responde `{sales_by_day: [], top_products: [], top_freelancers: []}` y **omite `period`**.
+    Solo cuentan órdenes con `payment_status = 'paid'`.
+  required: [sales_by_day, top_products, top_freelancers]
+  properties:
+    period:
+      type: string
+      description: Eco literal del query `period` (por defecto `7d`); NO se normaliza (`?period=foo` devuelve `foo` con ventana de 7 días). Ausente si el owner no tiene negocios.
+      example: 7d
+    sales_by_day:
+      type: array
+      nullable: true
+      items: { $ref: '#/components/schemas/BusinessStatsDaySale' }
+    top_products:
+      type: array
+      nullable: true
+      description: Top 5 por cantidad vendida.
+      items: { $ref: '#/components/schemas/BusinessStatsTopProduct' }
+    top_freelancers:
+      type: array
+      nullable: true
+      description: Top 5 por número de ventas.
+      items: { $ref: '#/components/schemas/BusinessStatsTopFreelancer' }
+
+FreelancerEarningDay:
+  type: object
+  required: [day, sales, earnings]
+  properties:
+    day:
+      type: string
+      format: date-time
+      description: Medianoche UTC del día (ver `BusinessStatsDaySale.day`).
+    sales: { type: integer, format: int64 }
+    earnings: { type: number, description: Suma de `freelancer_commission` del día }
+
+FreelancerTopProduct:
+  type: object
+  required: [product_id, product_name, sales, earned]
+  properties:
+    product_id: { type: integer, format: int64 }
+    product_name: { type: string }
+    sales: { type: integer, format: int64 }
+    earned: { type: number }
+
+FreelancerDashboardResponse:
+  type: object
+  description: Solo órdenes con `payment_status = 'paid'` y `freelancer_id` del usuario.
+  required: [period, earnings_by_day, top_products, balance, period_total]
+  properties:
+    period:
+      type: string
+      description: Eco literal del query `period` (por defecto `7d`); cualquier valor distinto de `30d` usa ventana de 7 días.
+      example: 7d
+    earnings_by_day:
+      type: array
+      nullable: true
+      description: "`null` (no `[]`) si no hubo ventas en el período."
+      items: { $ref: '#/components/schemas/FreelancerEarningDay' }
+    top_products:
+      type: array
+      nullable: true
+      description: Top 5 por ventas. `null` si no hubo ventas.
+      items: { $ref: '#/components/schemas/FreelancerTopProduct' }
+    balance:
+      type: number
+      description: Saldo actual (`earnings_balance`).
+    period_total:
+      type: number
+      description: Suma de `freelancer_commission` en el período.
+
+Movement:
+  type: object
+  properties:
+    type: { type: string, enum: [commission, withdrawal] }
+    title: { type: string }
+    amount: { type: number, description: "COP. Positivo = ingreso, negativo = egreso" }
+    status: { type: string, enum: [released, pending, processing, completed, failed] }
+    order_id: { type: integer, format: int64, description: Solo en comisiones }
+    created_at: { type: string, format: date-time }
+
+MovementsResponse:
+  type: object
+  properties:
+    movements:
+      type: array
+      items: { $ref: '#/components/schemas/Movement' }

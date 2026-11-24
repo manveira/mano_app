@@ -236,7 +236,8 @@ func (h *Handler) UpdateDeliveryStatus(c *gin.Context) {
 	h.db.First(&order, delivery.OrderID)
 	var biz models.Business
 	h.db.First(&biz, order.BusinessID)
-	if biz.OwnerID != claims.UserID && claims.Role != "admin" {
+	if biz.OwnerID != claims.UserID && claims.Role != "admin" &&
+		!(delivery.CourierID != nil && *delivery.CourierID == claims.UserID) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "only the business owner can update delivery status"})
 		return
 	}
