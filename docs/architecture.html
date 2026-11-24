@@ -477,12 +477,39 @@
     <p class="sub" style="margin-top:8px">⚠ Container Apps muestra un cargo de entorno de ≈ $73/mes desde sept-2026; no se confirmó si aplica al plan de consumo. El ancho de banda lo domina el peso de las imágenes del diseñador (≈ 1 TB/mes con 50.000 usuarios ≈ $78): pedir una exportación liviana y poner un CDN gratuito delante.</p>
   </div>
 
+  <div class="card" style="margin-top:14px" id="alternativas-pago">
+    <h4 style="margin:0 0 6px">¿Hay un proveedor de pagos más barato que Wompi?</h4>
+    <p class="sub" style="margin:0 0 10px"><b>Respuesta corta: no en tarjetas.</b> Todas cobran entre 2,5 % y 3,3 % + un fijo de $300 a $900 + IVA, y la diferencia entre la más cara y la más barata es de medio punto. Lo que sí baja el costo es el <b>método de pago</b>: PSE (tarifa fija) y Bre-B (≈ $0).</p>
+    <table>
+      <tr><th>Opción (tarifa de lista, + IVA 19 % sobre la comisión)</th><th>Pedido $20.000</th><th>$60.000</th><th>$120.000</th><th>$250.000</th><th>Pedido mínimo para no perder con el 4 %</th></tr>
+      <tr><td><b>Wompi</b> · 2,65 % + $700 <span class="pill ok">oficial</span></td><td>$1.464 (7,3 %)</td><td>$2.725 (4,5 %)</td><td>$4.617 (3,8 %)</td><td>$8.717 (3,5 %)</td><td>$98.400</td></tr>
+      <tr><td>ePayco/Davipay con cuenta Davivienda · 2,64 % + $690 <span class="pill warn">tercero</span></td><td>$1.449</td><td>$2.706 (4,5 %)</td><td>$4.591</td><td>$8.675</td><td>$95.700</td></tr>
+      <tr><td>Credibanco "Chebre" · 2,5 % + $800 <span class="pill warn">tercero</span></td><td>$1.547</td><td>$2.737 (4,6 %)</td><td>$4.522</td><td>$8.390</td><td>$92.900</td></tr>
+      <tr><td>ePayco estándar / Bold · 2,99 % + $900 <span class="pill warn">tercero</span></td><td>$1.783</td><td>$3.206 (5,3 %)</td><td>$5.341</td><td>$9.966</td><td>≈ $242.000</td></tr>
+      <tr><td>PayU · 3,29 % + $300 <span class="pill warn">fuentes distintas</span></td><td>$1.140</td><td>$2.706 (4,5 %)</td><td>$5.055</td><td>$10.145</td><td>≈ $420.000</td></tr>
+      <tr><td>Mercado Pago (giro inmediato) · 3,29 % + $800 <span class="pill warn">tercero</span></td><td>$1.735</td><td>$3.301 (5,5 %)</td><td>$5.650</td><td>$10.740</td><td>casi nunca</td></tr>
+      <tr><td><b>PSE</b> con tarifa fija de $1.500 <span class="pill warn">referencia de mercado</span></td><td>$1.785 (8,9 %)</td><td><b>$1.785 (3,0 %)</b></td><td><b>$1.785 (1,5 %)</b></td><td><b>$1.785 (0,7 %)</b></td><td><b>$44.600</b></td></tr>
+      <tr><td>PSE con tarifa fija de $2.500</td><td>$2.975</td><td>$2.975 (5,0 %)</td><td>$2.975 (2,5 %)</td><td>$2.975 (1,2 %)</td><td>$74.400</td></tr>
+      <tr><td><b>Bre-B</b> (pago inmediato por llave o QR) <span class="pill info">por cotizar</span></td><td colspan="4">≈ $0 para el comercio según Bancolombia y Bold (plan básico / QR Pro); depende del contrato y del banco</td><td>sin límite</td></tr>
+      <tr><td>Efectivo (Efecty, Baloto, corresponsales como Puntored) <span class="pill warn">referencia</span></td><td colspan="4">≈ 3,5 % de referencia vía una pasarela; solo cuenta cuando el cliente paga; Puntored no publica tarifas</td><td>—</td></tr>
+    </table>
+    <p class="sub" style="margin:10px 0 4px"><b>Qué significa para Mano App</b></p>
+    <ul style="margin:0 0 6px;padding-left:20px">
+      <li><b>Cambiar de proveedor de tarjeta no arregla el margen.</b> Pasar de Wompi a Davipay ahorra ≈ $19 COP por pedido de $60.000 (≈ $5 USD/mes con 1.000 pedidos) y cuesta días de integración, pruebas y soporte. Ningún plan de tarjeta cierra el hueco por debajo de ≈ $93.000.</li>
+      <li><b>Lo que sí mueve el costo:</b> empujar <b>PSE</b> y <b>Bre-B</b> en el checkout (en un pedido de $60.000 PSE ahorra ≈ $940 frente a la tarjeta) y corregir el modelo de precio: cargo de servicio al comprador, mínimo por pedido o repartir la tarifa.</li>
+      <li><b>Wompi sigue siendo razonable:</b> ya está integrado y probado, tiene checkout embebido, $0 de dispersión a cuentas Bancolombia y cobra solo si el pago es exitoso. Pregunta a Wompi si tu plan cobra PSE con tarifa fija en vez del 2,65 %.</li>
+      <li><b>Mano App es un marketplace:</b> retiene el dinero (escrow) y lo reparte entre negocio, comisionista y plataforma. Un proveedor más barato que no ofrezca reparto o pagos a terceros no sirve. Wompi tiene "Pagos a terceros" (por cotizar); Mercado Pago ofrece pagos divididos para marketplaces. Antes de cambiar, validar el reparto y los costos de retiro.</li>
+      <li><b>Impuestos:</b> los pagos con tarjeta llevan retenciones de ley (ReteFuente ≈ 1,5 %, ReteIVA, ReteICA) que se descuentan al girar el dinero y son anticipo de impuestos; PSE y Nequi no las llevan. Consultarlo con un contador.</li>
+    </ul>
+    <p class="sub" style="margin:0">Fuentes: página oficial de tarifas de Wompi y comparativas colombianas de 2026 (Bran-D, Alejandro Verjel, BTO Digital, Guía de Software, OrbitLab, Credantus, Bancolombia, Bold). Las tarifas de terceros <b>no son oficiales</b>, varían por contrato y volumen y algunas fuentes no coinciden (marcadas). Detalle y fórmulas en <code>docs/COSTS.md</code> §5b.</p>
+  </div>
+
   <div class="card" style="margin-top:14px">
     <h4 style="margin:0 0 8px">Recomendación</h4>
     <ol style="margin:0;padding-left:20px">
       <li><b>Hoy:</b> apagar (desasignar) la VM mientras no se use (ahorra ≈ $30/mes) y activar un presupuesto con alertas en Cost Management.</li>
       <li><b>Refactor:</b> empezar con la opción A (≈ $76–90/mes). Pasar a B al necesitar BD gestionada y escalado. APIM Basic v2 ($150) solo si se quiere portal, políticas y SLA de Microsoft; de $700 en adelante no se justifica a este tamaño.</li>
-      <li><b>Antes de cobrar dinero real:</b> resolver la tarifa de Wompi (arriba). Es el mayor costo.</li>
+      <li><b>Antes de cobrar dinero real:</b> resolver la tarifa de Wompi (arriba). Es el mayor costo. Cambiar de proveedor de tarjeta no la resuelve; sí ayudan PSE, Bre-B y un cargo de servicio.</li>
     </ol>
   </div>
 </section>

@@ -153,6 +153,34 @@ Por etapa (ticket de $60.000): comisión del 4 % vs tarifas de Wompi → **Pilot
 **Decisiones de producto posibles** (no se aplican solas): (a) repartir la tarifa de Wompi entre negocio y comisionista, (b) subir la comisión de plataforma o ponerle un mínimo por pedido, (c) cobrar un cargo de servicio al comprador, (d) pedido mínimo (≈ $100.000), (e) negociar tarifa con Wompi por volumen, (f) PSE/Nequi pueden tener otra tarifa: cotizarlo. **Nada de esto está en el código hoy:** el reparto actual no descuenta la tarifa de Wompi de nadie, así que la absorbe la plataforma.
 **No incluido y por cotizar:** costo de **Pagos a terceros** de Wompi para pagar a negocios/comisionistas (hoy los retiros son manuales por Nequi), impuestos (IVA de la comisión, retenciones, ICA) y cuatro por mil.
 
+## 5b. ¿Hay un proveedor de pagos más barato que Wompi?
+
+**Respuesta corta: no en tarjetas; sí cambia el método de pago.** Las tarifas de lista de tarjeta están en un rango estrecho (2,5 % – 3,3 % + $300–900 + IVA). Lo que baja el costo es PSE (tarifa fija) y Bre-B (≈ $0). Costo = (% × T + fijo) × 1,19; PSE = tarifa fija × 1,19.
+
+| Opción | $20.000 | $60.000 | $120.000 | $250.000 | Pedido mínimo para que el 4 % no pierda |
+|---|---:|---:|---:|---:|---:|
+| **Wompi** 2,65 % + $700 (oficial) | $1.464 (7,3 %) | $2.725 (4,5 %) | $4.617 (3,8 %) | $8.717 (3,5 %) | $98.400 |
+| ePayco/Davipay con cuenta Davivienda 2,64 % + $690 🟡 | $1.449 | $2.706 (4,5 %) | $4.591 | $8.675 | $95.700 |
+| Credibanco "Chebre" 2,5 % + $800 🟡 | $1.547 | $2.737 (4,6 %) | $4.522 | $8.390 | $92.900 |
+| ePayco estándar / Bold 2,99 % + $900 🟡 | $1.783 | $3.206 (5,3 %) | $5.341 | $9.966 | ≈ $242.000 |
+| PayU 3,29 % + $300 🟡 (las fuentes no coinciden) | $1.140 | $2.706 (4,5 %) | $5.055 | $10.145 | ≈ $420.000 |
+| Mercado Pago (giro inmediato) 3,29 % + $800 🟡 | $1.735 | $3.301 (5,5 %) | $5.650 | $10.740 | casi nunca |
+| **PSE** tarifa fija $1.500 🟡 | $1.785 (8,9 %) | **$1.785 (3,0 %)** | **$1.785 (1,5 %)** | **$1.785 (0,7 %)** | **$44.600** |
+| PSE tarifa fija $2.500 🟡 | $2.975 | $2.975 (5,0 %) | $2.975 (2,5 %) | $2.975 (1,2 %) | $74.400 |
+| **Bre-B** (llave o QR) | ≈ $0 según Bancolombia y Bold; por cotizar | | | | sin límite |
+| Efectivo (Efecty, Baloto, corresponsales) 🟡 | ≈ 3,5 % de referencia; solo se cobra cuando el cliente paga | | | | — |
+
+**Conclusiones**
+1. **Cambiar de proveedor de tarjeta no arregla el margen.** Wompi → Davipay ahorra ≈ $19 COP por pedido de $60.000 (≈ $5 USD/mes con 1.000 pedidos) y costaría días de integración y pruebas. Ni la mejor tarifa de tarjeta cierra el hueco por debajo de ≈ $93.000.
+2. **Lo que sí mueve el costo:** empujar **PSE** (en un pedido de $60.000 ahorra ≈ $940 frente a la tarjeta) y **Bre-B** en el checkout, y corregir el modelo de precio (cargo de servicio al comprador, mínimo por pedido o repartir la tarifa).
+3. **Wompi sigue siendo razonable:** ya está integrado y probado, checkout embebido, $0 de dispersión a cuentas Bancolombia, cobra solo si el pago es exitoso. **Preguntar a Wompi** si tu plan cobra PSE con tarifa fija: su página oficial muestra una sola tarifa (2,65 % + $700 + IVA) y las comparativas de terceros hablan de un fijo para PSE; las fuentes no coinciden.
+4. **Mano App es un marketplace** (escrow y reparto entre negocio, comisionista y plataforma). Un proveedor más barato sin reparto ni pagos a terceros no sirve. Wompi: "Pagos a terceros" (sin cotizar). Mercado Pago ofrece pagos divididos para marketplaces. Validar reparto y costos de retiro antes de cambiar.
+5. **Bre-B** (pagos inmediatos del Banco de la República, operando desde el 6-oct-2025): el comercio recibe por llave o QR; Bancolombia lo ofrece gratis en su plan básico y Bold activa el QR Bre-B para pagos en línea. Falta confirmar con Wompi si lo soporta en el checkout y cómo se concilia por pedido; también sería una vía barata para **pagar retiros** a negocios y comisionistas (hoy son manuales por Nequi).
+6. **"Punto rojo":** se interpretó como **Puntored/Punto Red** (red de ≈ 80.000 corresponsales para depósitos y recaudo). No publica tarifas; es un contrato B2B. El efectivo llega solo cuando el cliente paga y suma ≈ 3,5 % vía una pasarela. Solo valdría la pena para compradores sin cuenta bancaria. *(Confirmar que era esa la red a la que te referías.)*
+7. **Retenciones:** los pagos con tarjeta llevan ReteFuente (≈ 1,5 %), ReteIVA y ReteICA al girar el dinero, como anticipo de impuestos; PSE y Nequi no. Consultar con un contador.
+
+**Límite:** las tarifas de terceros salen de comparativas de 2026 (Bran-D, Alejandro Verjel, BTO Digital, Guía de Software, OrbitLab, Credantus) y **no son oficiales**; cambian por contrato y volumen, y varias fuentes no coinciden (marcadas 🟡). Solo la de Wompi se leyó en su página oficial. Hay que pedir cotización a cada proveedor antes de decidir.
+
 ## 6. Costos por fase del refactor
 
 | Fase | Costo de infraestructura que introduce |
