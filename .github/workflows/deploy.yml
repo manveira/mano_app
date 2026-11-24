@@ -127,6 +127,7 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
           GHCR_USER: ${{ github.actor }}
           DEPLOY_SHA: ${{ github.sha }}
+          VM_HOST: ${{ secrets.AZURE_VM_HOST || vars.AZURE_VM_HOST }}
         with:
           host: ${{ secrets.AZURE_VM_HOST || vars.AZURE_VM_HOST }}
           username: ${{ secrets.AZURE_VM_USER || vars.AZURE_VM_USER }}
@@ -134,7 +135,7 @@ jobs:
           # SOLO como secret. NO usar vars.*: las variables no se ocultan en los logs y los logs de este repo son públicos.
           password: ${{ secrets.AZURE_VM_PASSWORD }}
           fingerprint: ${{ secrets.AZURE_VM_FINGERPRINT }}
-          envs: GHCR_TOKEN,GHCR_USER,DEPLOY_SHA
+          envs: GHCR_TOKEN,GHCR_USER,DEPLOY_SHA,VM_HOST
           script_stop: true
           script: |
             bash -s <<'REMOTE'
@@ -142,20 +143,32 @@ jobs:
             cd /opt/mano-app
             COMPOSE="docker compose -f docker-compose.prod.yml"
 
+            envget() { grep -E "^$1=" .env | head -1 | cut -d= -f2- | tr -d '\r'; }
+
             echo "▶ 1/6 Comprobando el .env del servidor"
             [ -f .env ] || { echo "❌ Falta /opt/mano-app/.env (ver docs/DEPLOY.md)"; exit 1; }
-            for v in GITHUB_OWNER POSTGRES_USER POSTGRES_PASSWORD REDIS_PASSWORD JWT_SECRET APP_BASE_URL DOMAIN; do
+            for v in GITHUB_OWNER POSTGRES_USER POSTGRES_PASSWORD REDIS_PASSWORD JWT_SECRET; do
               grep -qE "^${v}=.+" .env || { echo "❌ Falta ${v} en .env"; exit 1; }
             done
             JWT_LEN=$(grep -E '^JWT_SECRET=' .env | cut -d= -f2- | tr -d '\r' | wc -c)
             [ "$JWT_LEN" -ge 33 ] || { echo "❌ JWT_SECRET debe tener al menos 32 caracteres"; exit 1; }
+            if [ -z "$(envget DOMAIN)" ]; then
+              # Sin dominio: modo temporal solo HTTP por la IP (nginx.http.conf). Con DOMAIN se usa HTTPS (nginx.prod.conf).
+              echo "ℹ️  Sin DOMAIN en .env: modo HTTP por IP (sin TLS). Usa solo datos de prueba y llaves de Wompi de sandbox."
+              [ -n "${VM_HOST:-}" ] || { echo "❌ Falta AZURE_VM_HOST para armar APP_BASE_URL"; exit 1; }
+              export NGINX_CONF=nginx.http.conf
+              export APP_BASE_URL="http://${VM_HOST}"
+              echo "   APP_BASE_URL=${APP_BASE_URL}"
+            else
+              echo "ℹ️  DOMAIN=$(envget DOMAIN): modo HTTPS con dominio."
+              grep -qE "^APP_BASE_URL=.+" .env || { echo "❌ Falta APP_BASE_URL en .env"; exit 1; }
+            fi
 
             echo "▶ 2/6 Código exacto del commit ${DEPLOY_SHA}"
             git fetch --prune origin
             git checkout --force "${DEPLOY_SHA}"
 
             echo "▶ 3/6 Respaldo de la base de datos"
-            envget() { grep -E "^$1=" .env | head -1 | cut -d= -f2- | tr -d '\r'; }
             PGUSER_ENV=$(envget POSTGRES_USER); PGDB_ENV=$(envget POSTGRES_DB); PGDB_ENV=${PGDB_ENV:-mano}
             mkdir -p /opt/mano-backups
             if $COMPOSE ps --status running --services 2>/dev/null | grep -qx postgres; then
@@ -167,7 +180,20 @@ jobs:
             fi
 
             echo "▶ 4/6 Descargando imágenes"
-            PREV_TAG=$(cat .last_good_tag 2>/dev/null || echo latest)
+            # Guarda las imágenes que corren HOY como ":rollback" (la etiqueta :latest ya fue sobrescrita por el build)
+            OWNER_ENV=$(envget GITHUB_OWNER)
+            for svc in backend frontend; do
+              cid=$($COMPOSE ps -q "$svc" 2>/dev/null | head -1 || true)
+              if [ -n "$cid" ]; then
+                img=$(docker inspect --format '{{.Image}}' "$cid" 2>/dev/null || true)
+                [ -n "$img" ] && docker tag "$img" "ghcr.io/${OWNER_ENV}/mano-${svc}:rollback" || true
+              fi
+            done
+            PREV_TAG=$(cat .last_good_tag 2>/dev/null || true)
+            if [ -z "$PREV_TAG" ]; then
+              if docker image inspect "ghcr.io/${OWNER_ENV}/mano-backend:rollback" >/dev/null 2>&1; then PREV_TAG=rollback; else PREV_TAG=none; fi
+            fi
+            echo "   versión anterior para reversión: ${PREV_TAG}"
             echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GHCR_USER}" --password-stdin
             export IMAGE_TAG="${DEPLOY_SHA}"
             $COMPOSE pull backend frontend
@@ -184,15 +210,20 @@ jobs:
             if [ "$OK" != 1 ]; then
               echo "❌ El backend no respondió. Últimos logs:"
               $COMPOSE logs --tail 60 backend || true
-              echo "↩️  Reversión a la versión anterior (${PREV_TAG})"
-              export IMAGE_TAG="${PREV_TAG}"
-              $COMPOSE up -d --no-deps backend frontend || true
+                if [ "${PREV_TAG}" = none ]; then
+                echo "⚠️  No hay una versión anterior a la que volver (no había app corriendo)."
+              else
+                echo "↩  Reversión a la versión anterior (${PREV_TAG})"
+                export IMAGE_TAG="${PREV_TAG}"
+                $COMPOSE up -d --no-deps backend frontend || true
+              fi
               exit 1
             fi
             echo "${DEPLOY_SHA}" > .last_good_tag
             docker image prune -f >/dev/null 2>&1 || true
             $COMPOSE ps
             echo "✅ Deploy completado — commit ${DEPLOY_SHA}"
+            [ -n "${NGINX_CONF:-}" ] && echo "🌐 Abre: ${APP_BASE_URL}" || true
             REMOTE
 
       - name: Chequeo externo (si APP_URL está definida)

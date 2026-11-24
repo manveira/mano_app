@@ -23,6 +23,14 @@ Estado conocido al 24-nov-2026: la suscripción `manve-subs` figura **Disabled**
 6. **Wompi**: pega `https://TU_DOMINIO/api/webhooks/wompi` en *Desarrollo → Programadores → URL de Eventos* (con el modo de pruebas activo si usas llaves de prueba).
 7. **Verifica** (§5).
 
+## 1b. Modo HTTP por IP (sin dominio) — temporal
+Si el `.env` del servidor **no tiene `DOMAIN`**, el workflow despliega en **HTTP, solo por la IP de la VM** (`http://<AZURE_VM_HOST>`):
+- Usa `nginx.http.conf` en vez de `nginx.prod.conf` (esta última, con dominio y HTTPS, queda **sin cambios** para cuando haya dominio).
+- Fija `APP_BASE_URL=http://<IP>` por sí solo; no hace falta editarlo en el `.env`.
+- **Límites y riesgos:** sin TLS, las contraseñas y los tokens viajan en claro por internet → usar solo datos de prueba y llaves de Wompi de **sandbox**. Wompi pide una URL de regreso `https` pública, así que el pago puede no funcionar por la IP en HTTP (se probará); para probar pagos siguen sirviendo el túnel de `docs/WOMPI_SANDBOX.md`.
+- Para pasar a HTTPS más adelante: dominio apuntando a la IP, `DOMAIN=...` en el `.env`, certificado (`scripts/setup-server.sh`) y volver a ejecutar el workflow.
+- **Reversión del primer despliegue:** antes de reemplazar la app vieja, el script guarda sus imágenes como `:rollback`; si la versión nueva no queda sana, vuelve a esa.
+
 ## 2. Configuración en GitHub (una sola vez)
 
 *Settings → Secrets and variables → Actions*.
@@ -53,7 +61,7 @@ Plantilla: `.env.example`. **Nunca** se sube a git. Valores:
 | `REDIS_PASSWORD` | `openssl rand -hex 16` |
 | `JWT_SECRET` | `openssl rand -hex 32` (mínimo 32 caracteres; si no, el backend **no arranca**) |
 | `APP_BASE_URL` | `https://TU_DOMINIO` (https obligatorio para el regreso desde Wompi) |
-| `DOMAIN` | `TU_DOMINIO` sin `https://` ni `www` (nginx lo usa; **nueva**, falta en los `.env` antiguos) |
+| `DOMAIN` | `TU_DOMINIO` sin `https://` ni `www`. **Opcional**: si NO está, el despliegue usa el **modo HTTP por IP** (§1b) |
 | `WOMPI_PUBLIC_KEY`, `WOMPI_PRIVATE_KEY`, `WOMPI_INTEGRITY_SECRET`, `WOMPI_EVENTS_SECRET` | **Primer despliegue: llaves de PRUEBAS** (`pub_test_…`, `prv_test_…`, `test_integrity_…`, `test_events_…`). El backend elige sandbox o producción por el prefijo de la llave pública |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Primer administrador (solo se crea si no hay ninguno). Contraseña de 12+ caracteres; quita `ADMIN_PASSWORD` del archivo tras el primer arranque |
 | `SMTP_*`, `FROM_EMAIL` | Correo de notificaciones |
@@ -90,7 +98,7 @@ No cambies a llaves `pub_prod_…` hasta cerrar (ver `docs/MIGRATION_PLAN.md` F4
 ## 8. Problemas frecuentes
 | Síntoma | Causa | Qué hacer |
 |---|---|---|
-| El workflow falla en "Falta DOMAIN en .env" | `.env` antiguo | Añade `DOMAIN=TU_DOMINIO` (§3) |
+| El workflow dice "Sin DOMAIN en .env: modo HTTP por IP" | No hay dominio configurado | Es normal (§1b). Con dominio: añade `DOMAIN=TU_DOMINIO` |
 | `configuración insegura: JWT_SECRET…` en el log del backend | Secreto corto o por defecto | `openssl rand -hex 32` en `.env` |
 | `Permission denied (publickey)` | Llave SSH mal copiada | Revisa `AZURE_SSH_KEY` (completa, con `BEGIN/END`) y `authorized_keys` |
 | `denied` al hacer `docker pull` | `GHCR_TOKEN` sin `read:packages` o vencido | Genera otro token y actualiza el secret |
