@@ -190,7 +190,11 @@ jobs:
               cid=$($COMPOSE ps -q "$svc" 2>/dev/null | head -1 || true)
               if [ -n "$cid" ]; then
                 img=$(docker inspect --format '{{.Image}}' "$cid" 2>/dev/null || true)
-                [ -n "$img" ] && docker tag "$img" "ghcr.io/${OWNER_ENV}/mano-${svc}:rollback" || true
+                # Solo la primera vez: así ":rollback" conserva la versión anterior al primer intento y no se pisa con
+                # imágenes de un intento fallido (que ya serían las nuevas).
+                if ! docker image inspect "ghcr.io/${OWNER_ENV}/mano-${svc}:rollback" >/dev/null 2>&1; then
+                  [ -n "$img" ] && docker tag "$img" "ghcr.io/${OWNER_ENV}/mano-${svc}:rollback" || true
+                fi
               fi
             done
             PREV_TAG=$(cat .last_good_tag 2>/dev/null || true)
