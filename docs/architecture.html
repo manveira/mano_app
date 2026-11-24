@@ -89,7 +89,7 @@
     <div class="legend"><span><i style="background:var(--green)"></i>hechas</span><span><i style="background:var(--amber)"></i>en curso</span><span><i style="background:#0b0d12;border:1px solid var(--line)"></i>sin empezar</span></div>
     <table style="margin-top:14px">
       <tr><th>Fase</th><th>Qué es</th><th>Estado</th><th>Hecho / falta</th></tr>
-      <tr><td>F0</td><td>Fundaciones y guardrails</td><td><span class="pill warn">casi</span></td><td>Entorno local, smoke, línea base y CI hechos; <b>CI verde en GitHub (PR #1)</b>. Falta el tag <code>baseline-pre-refactor</code>.</td></tr>
+      <tr><td>F0</td><td>Fundaciones y guardrails</td><td><span class="pill warn">casi</span></td><td>Entorno local, smoke, línea base y CI hechos; <b>CI verde en GitHub y PR #1 fusionado a <code>main</code></b>. Falta el tag <code>baseline-pre-refactor</code>.</td></tr>
       <tr><td>F1</td><td>Contrato OpenAPI</td><td><span class="pill warn">borrador</span></td><td>27 rutas / 31 operaciones / 86 schemas de ≈ 64 rutas reales. Falta cubrirlas todas, tests de contrato, congelar v1 y generar clientes.</td></tr>
       <tr><td>F2</td><td>Gateway</td><td><span class="pill bad">no iniciado</span></td><td>Nada. Depende de D4. (El nginx de producción ya limita intentos en <code>/api/auth/</code> y añade cabeceras.)</td></tr>
       <tr><td>F3</td><td>Web aislado</td><td><span class="pill warn">parcial</span></td><td>Hotspots tipados, cliente API con headers <code>X-Mano-*</code>, sesión, <code>/pagos</code>. Falta cliente generado, páginas legacy, export estático y E2E en CI.</td></tr>
