@@ -63,20 +63,20 @@
 
 <header>
   <h1><span>mano</span> · Arquitectura actual y objetivo</h1>
-  <p>Análisis del repo (27 oct 2026), <b>actualizado con el avance real el 25 nov 2026</b>. Detalle en <code>ARCHITECTURE_CURRENT_STATE.md</code> y <code>MIGRATION_PLAN.md</code>.</p>
+  <p>Análisis del repo (27 oct 2026), <b>actualizado con el avance real el 24 nov 2026</b>. Detalle en <code>ARCHITECTURE_CURRENT_STATE.md</code> y <code>MIGRATION_PLAN.md</code>.</p>
 </header>
 <nav><div>
   <a href="#avance">Avance</a><a href="#actual">1 · Hoy</a><a href="#ejecucion">2 · Quién corre dónde</a><a href="#objetivo">3 · Objetivo</a>
   <a href="#headers">4 · Headers de cliente</a><a href="#ruteo">5 · Ruteo</a>
   <a href="#venta">6 · Flujo de venta</a><a href="#acople">7 · Acoplamientos</a>
-  <a href="#hallazgos">8 · Hallazgos</a><a href="#fases">9 · Fases</a><a href="#decisiones">10 · Decisiones</a>
+  <a href="#hallazgos">8 · Hallazgos</a><a href="#fases">9 · Fases</a><a href="#decisiones">10 · Decisiones</a><a href="#costos">11 · Costos</a>
 </div></nav>
 
 <main>
 
 <!-- ============================ AVANCE REAL ============================ -->
 <section id="avance">
-  <h2>Avance real del refactor · corte 25 nov 2026</h2>
+  <h2>Avance real del refactor · corte 24 nov 2026</h2>
   <p class="sub">De las 9 fases del plan, <b>ninguna ha pasado su gate</b>. La arquitectura objetivo (gateway + servicios laterales + web estático + apps nativas) <b>todavía no existe</b>: hoy sigue siendo el monolito Go detrás de nginx con el web de Next.js. Lo que sí avanzó es lo que habilita el resto: contrato, pagos y entorno de pruebas.</p>
   <div class="card">
     <div class="kpi">
@@ -99,7 +99,7 @@
       <tr><td>F7</td><td>Endurecimiento</td><td><span class="pill bad">no iniciado</span></td><td>Solo hay respaldo de BD antes de cada despliegue. Faltan migraciones versionadas, carga y observabilidad.</td></tr>
       <tr><td>F8</td><td>Promoción a remoto</td><td><span class="pill warn">adelantada</span></td><td>Despliegue manual con confirmación, imágenes por SHA, respaldo, salud y reversión ya escrito. Falta staging real, DNS/TLS y secretos en GitHub.</td></tr>
     </table>
-    <p class="sub" style="margin-top:12px"><b>Desviación consciente (25 nov):</b> se sube el código y se prepara Azure <i>antes</i> de los gates, como despliegue de la arquitectura actual con llaves de <b>sandbox</b> de Wompi. No es la promoción completa: no cobrar dinero real hasta cerrar F4.4–F4.7.</p>
+    <p class="sub" style="margin-top:12px"><b>Desviación consciente (24 nov):</b> se sube el código y se prepara Azure <i>antes</i> de los gates, como despliegue de la arquitectura actual con llaves de <b>sandbox</b> de Wompi. No es la promoción completa: no cobrar dinero real hasta cerrar F4.4–F4.7.</p>
   </div>
 </section>
 
@@ -352,12 +352,12 @@
   <div class="grid2">
     <div class="card"><span class="pill bad">Crítico</span>
       <ul>
-        <li><s>Firma de integridad Wompi con HMAC</s> <span class="pill ok">corregido 25-nov</span></li>
-        <li><s>Webhook Wompi omite <code>timestamp</code></s> <span class="pill ok">corregido 25-nov</span></li>
-        <li><s>Webhook acepta todo sin <code>WOMPI_EVENTS_SECRET</code></s> <span class="pill ok">corregido 25-nov</span></li>
+        <li><s>Firma de integridad Wompi con HMAC</s> <span class="pill ok">corregido 24-nov</span></li>
+        <li><s>Webhook Wompi omite <code>timestamp</code></s> <span class="pill ok">corregido 24-nov</span></li>
+        <li><s>Webhook acepta todo sin <code>WOMPI_EVENTS_SECRET</code></s> <span class="pill ok">corregido 24-nov</span></li>
         <li>Sin auto-confirm de 24 h fuera de mock</li>
         <li>Paquetes de publicidad y Plan Pro se activan sin cobrar</li>
-        <li><s>Seed con <code>password123</code> en producción</s> <span class="pill ok">corregido 25-nov</span></li>
+        <li><s>Seed con <code>password123</code> en producción</s> <span class="pill ok">corregido 24-nov</span></li>
       </ul></div>
     <div class="card"><span class="pill warn">Alto / medio</span>
       <ul>
@@ -365,7 +365,7 @@
         <li>Anti-fraude (misma cédula) solo en el flujo mock</li>
         <li>Dinero sin transacciones de BD en retiros y liberación de escrow <span class="pill warn">parcial</span> (el webhook ya es atómico e idempotente)</li>
         <li>Ruta Stripe en USD que se salta el escrow</li>
-        <li><s><code>JWT_SECRET</code> con valor por defecto</s> <span class="pill ok">corregido 25-nov</span> (el backend no arranca así)</li>
+        <li><s><code>JWT_SECRET</code> con valor por defecto</s> <span class="pill ok">corregido 24-nov</span> (el backend no arranca así)</li>
         <li>Rol <code>courier</code> inexistente; KYC a medias</li>
       </ul></div>
   </div>
@@ -406,7 +406,88 @@
   </div>
 </section>
 
+<!-- ============================ 11. COSTOS ============================ -->
+<section id="costos">
+  <h2>11 · Costos</h2>
+  <p class="sub">Corte 24 nov 2026 · USD por mes, precio de lista de Azure (región eastus, API oficial de precios), sin impuestos ni descuentos · COP con TRM supuesta de $3.500. Detalle, supuestos y fuentes en <code>docs/COSTS.md</code>. Regla permanente: <b>todo cambio de infraestructura actualiza este apartado y <code>COSTS.md</code></b>.</p>
+
+  <div class="card">
+    <div class="kpi">
+      <div><b>≈ $39</b><span>hoy: 1 VM de Azure (≈ 138 mil COP/mes)</span></div>
+      <div><b>$76 – 90</b><span>refactor económico (Kong + servicios en la VM)</span></div>
+      <div><b>$82 – 150</b><span>refactor administrado ligero</span></div>
+      <div><b>≈ $580</b><span>con SLA/HA (APIM Basic v2 + BD con réplica)</span></div>
+    </div>
+    <p class="sub" style="margin:0">Si la VM está apagada (desasignada) solo cobran el disco y la IP: ≈ $9/mes.</p>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <span class="pill bad">Hallazgo crítico</span>
+    <p style="margin:8px 0 6px"><b>La comisión del 4 % de la plataforma no cubre la tarifa de Wompi en pedidos pequeños.</b> Wompi cobra <code>2,65 % + $700 + IVA</code> por transacción exitosa: eso supera el 4 % en cualquier pedido menor de <b>≈ $98.400 COP</b>. Es un costo mayor que toda la infraestructura.</p>
+    <table>
+      <tr><th>Pedido</th><th>Tarifa Wompi</th><th>Comisión 4 %</th><th>Margen</th></tr>
+      <tr><td>$10.000</td><td>$1.148 (11,5 %)</td><td>$400</td><td><span class="pill bad">−$748</span></td></tr>
+      <tr><td>$60.000</td><td>$2.725 (4,5 %)</td><td>$2.400</td><td><span class="pill bad">−$325</span></td></tr>
+      <tr><td>$98.400</td><td>$3.936 (4,0 %)</td><td>$3.936</td><td><span class="pill warn">equilibrio</span></td></tr>
+      <tr><td>$120.000</td><td>$4.617 (3,85 %)</td><td>$4.800</td><td><span class="pill ok">+$183</span></td></tr>
+    </table>
+    <p class="sub" style="margin-top:8px">Hoy el reparto no descuenta la tarifa de Wompi de nadie: la absorbe la plataforma. Decisión de producto pendiente (cargo al comprador, mínimo por pedido, repartir entre negocio y comisionista, negociar tarifa).</p>
+  </div>
+
+  <div class="grid2" style="margin-top:14px">
+    <div class="card">
+      <h4 style="margin:0 0 8px">Infraestructura de hoy</h4>
+      <table>
+        <tr><th>Componente</th><th>USD/mes</th></tr>
+        <tr><td>VM <code>Standard_B2s</code> (2 vCPU, 4 GB) <span class="pill warn">supuesto</span></td><td>30,37</td></tr>
+        <tr><td>Disco del SO (30 GB, Premium P4)</td><td>5,28</td></tr>
+        <tr><td>IP pública estática</td><td>3,65</td></tr>
+        <tr><td>NIC, red virtual, NSG</td><td>0</td></tr>
+        <tr><td><b>Total Azure</b></td><td><b>≈ 39,30</b></td></tr>
+      </table>
+      <p class="sub" style="margin:8px 0 0">La suscripción está <i>Disabled</i> y no se pudo leer el tamaño real de la VM; se asumió B2s (lo documentado). Verificar en Cost Management.</p>
+    </div>
+    <div class="card">
+      <h4 style="margin:0 0 8px">Piezas nuevas del refactor</h4>
+      <table>
+        <tr><th>Pieza</th><th>USD/mes</th></tr>
+        <tr><td>Gateway Kong/nginx en la VM</td><td>0</td></tr>
+        <tr><td>APIM Consumption</td><td>0 (1 M llamadas) + $3,50/M</td></tr>
+        <tr><td>APIM Developer (sin SLA) / Basic v2</td><td>48 / <b>150</b></td></tr>
+        <tr><td>APIM Standard v2 / Premium</td><td>700 / 2.795</td></tr>
+        <tr><td>Container Apps (5 servicios + core) <span class="pill warn">estimado</span></td><td>≈ 46</td></tr>
+        <tr><td>PostgreSQL Flexible (mín. / B2ms)</td><td>≈ 17 / 114</td></tr>
+        <tr><td>Redis Basic C0 / Standard C0</td><td>16 / 40</td></tr>
+        <tr><td>Static Web Apps Free / Standard</td><td>0 / 9</td></tr>
+        <tr><td>Blob (fotos) por GB · Front Door Standard</td><td>0,021 · 35</td></tr>
+        <tr><td>Push (FCM/APNs) · Apple $99/año · Google $25 una vez</td><td>0</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h4 style="margin:0 0 8px">Proyección mensual (USD) por etapa</h4>
+    <table>
+      <tr><th>Arquitectura</th><th>Piloto<br><span class="s">100 pedidos · 500 usuarios</span></th><th>Crecimiento<br><span class="s">1.000 · 5.000</span></th><th>Escala<br><span class="s">10.000 · 50.000</span></th></tr>
+      <tr><td>Hoy: monolito en 1 VM</td><td>39</td><td>39</td><td>172 <span class="pill warn">1 solo servidor</span></td></tr>
+      <tr><td>A · Refactor económico (Kong + servicios en la VM)</td><td>76</td><td>90</td><td>281 <span class="s">(≈ 203 con CDN gratis)</span></td></tr>
+      <tr><td>B · Administrado ligero (APIM Consumption + Container Apps + BD gestionada)</td><td>82</td><td>150</td><td>433</td></tr>
+      <tr><td>C · Administrado con SLA/HA (APIM Basic v2 + BD con réplica + Front Door)</td><td colspan="3">≈ 578 de piso, sube con la escala</td></tr>
+    </table>
+    <p class="sub" style="margin-top:8px">⚠ Container Apps muestra un cargo de entorno de ≈ $73/mes desde sept-2026; no se confirmó si aplica al plan de consumo. El ancho de banda lo domina el peso de las imágenes del diseñador (≈ 1 TB/mes con 50.000 usuarios ≈ $78): pedir una exportación liviana y poner un CDN gratuito delante.</p>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h4 style="margin:0 0 8px">Recomendación</h4>
+    <ol style="margin:0;padding-left:20px">
+      <li><b>Hoy:</b> apagar (desasignar) la VM mientras no se use (ahorra ≈ $30/mes) y activar un presupuesto con alertas en Cost Management.</li>
+      <li><b>Refactor:</b> empezar con la opción A (≈ $76–90/mes). Pasar a B al necesitar BD gestionada y escalado. APIM Basic v2 ($150) solo si se quiere portal, políticas y SLA de Microsoft; de $700 en adelante no se justifica a este tamaño.</li>
+      <li><b>Antes de cobrar dinero real:</b> resolver la tarifa de Wompi (arriba). Es el mayor costo.</li>
+    </ol>
+  </div>
+</section>
+
 </main>
-<footer>Hallazgos 1 y 2 (firma de integridad y checksum del webhook) contrastados con la documentación oficial de Wompi y ya corregidos y probados contra el sandbox. El avance real sale de <code>docs/MIGRATION_PLAN.md</code> y de las pruebas ejecutadas el 25 nov 2026.</footer>
+<footer>Costos: precios de la API oficial de Azure (24 nov 2026) y tarifa de lista de Wompi; supuestos y límites en <code>docs/COSTS.md</code>. Hallazgos 1 y 2 (firma de integridad y checksum del webhook) contrastados con la documentación oficial de Wompi y ya corregidos y probados contra el sandbox. El avance real sale de <code>docs/MIGRATION_PLAN.md</code> y de las pruebas ejecutadas el 24 nov 2026.</footer>
 </body>
 </html>

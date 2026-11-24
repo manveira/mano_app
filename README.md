@@ -8,8 +8,10 @@ Marketplace local que conecta negocios, comisionistas y compradores.
 |-----------|-------------|
 | [README.md](./docs/README.md) | Setup, stack, endpoints, variables de entorno |
 | [ARCHITECTURE.md](./docs/ARCHITECTURE.md) | Decisiones técnicas, modelo de dinero, roadmap |
-| [INFRASTRUCTURE.md](./docs/INFRASTRUCTURE.md) | Opciones de deploy, análisis de costos, CI/CD |
+| [INFRASTRUCTURE.md](./docs/INFRASTRUCTURE.md) | Opciones de deploy y CI/CD (los precios vigentes están en COSTS.md) |
 | [DEPLOY.md](./docs/DEPLOY.md) | Pasos exactos: GitHub → GitHub Actions → Azure VM |
+| [COSTS.md](./docs/COSTS.md) | **Solo costos**: infraestructura actual, refactor, proyecciones y tarifa de Wompi |
+| [WOMPI_SANDBOX.md](./docs/WOMPI_SANDBOX.md) | Probar pagos con el sandbox de Wompi, paso a paso |
 | [SCALING.md](./docs/SCALING.md) | Guía de escalabilidad: cuándo y cómo escalar |
 | [GAPS.md](./docs/GAPS.md) | Gaps pendientes priorizados |
 | [ARCHITECTURE_CURRENT_STATE.md](./docs/ARCHITECTURE_CURRENT_STATE.md) | Estado actual y arquitectura objetivo (multi-frontend + API Gateway) |

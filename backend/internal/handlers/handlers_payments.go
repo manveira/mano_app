@@ -3,7 +3,7 @@ package handlers
 // handlers_payments.go — "Mis pagos": historial y detalle de los pagos de Wompi mapeados a las órdenes de la app,
 // y sincronización manual de una orden con Wompi (para cuando el comprador vuelve del checkout).
 //
-// Reglas de acceso (añadidas 25-nov-2026, aditivas al contrato):
+// Reglas de acceso (añadidas 24-nov-2026, aditivas al contrato):
 //   · scope=mine (por defecto): pagos que hizo el usuario como comprador.
 //   · scope=received: solo business_owner; pagos de órdenes de sus negocios. Sin datos personales del pagador.
 //   · Cualquier otro caso devuelve 404 (no se revela si la referencia existe).

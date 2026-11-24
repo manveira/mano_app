@@ -17,7 +17,7 @@ description: Fuente de verdad de Mano App (marketplace local con negocios, comis
 - **Abrir Kiro CLI desde `C:\Users\mdigital\Downloads\Repos`** para que cargue skill, reglas, hooks y MCP. Comprobar con `/mcp` que `github` esté conectado.
 - **Sin `.git` en esta copia.** El remoto es `https://github.com/manveira/mano_app` (público, rama `main`). Existe `mano_app - backup/` (copia vieja anterior a los cambios; no tocar).
 
-**Estado en una línea (25-nov-2026):** local funcionando y probado (API 182 PASS / 0 FAIL / 1 XFAIL; interfaz 31/31; smoke 5/5; simulador de webhook 12/12; `go test` verde; 18 hashes de imágenes intactos). Pagos con **Wompi sandbox funcionando de punta a punta** (orden 49 aprobada por Wompi y conciliada). Backend con confirmación servidor↔Wompi, conciliador, historial `/pagos`, arranque seguro y sin seed en producción. Despliegue a Azure **preparado y manual** (§15). **Azure: suscripción `manve-subs` Disabled hasta que procese tu pago; no se pudo leer la VM.** Refactor de `architecture.html`: **ninguna fase pasó su gate**; ver §16.
+**Estado en una línea (24-nov-2026):** local funcionando y probado (API 182 PASS / 0 FAIL / 1 XFAIL; interfaz 31/31; smoke 5/5; simulador de webhook 12/12; `go test` verde; 18 hashes de imágenes intactos). Pagos con **Wompi sandbox funcionando de punta a punta** (orden 49 aprobada por Wompi y conciliada). Backend con confirmación servidor↔Wompi, conciliador, historial `/pagos`, arranque seguro y sin seed en producción. Despliegue a Azure **preparado y manual** (§15). **Azure: suscripción `manve-subs` Disabled hasta que procese tu pago; no se pudo leer la VM.** Costos: hoy ≈ $39/mes, refactor $76–580 (§17); ⚠️ la tarifa de Wompi supera la comisión del 4 % en pedidos < ≈ $98.400. Refactor de `architecture.html`: **ninguna fase pasó su gate**; ver §16.
 
 **Lee además, según la tarea:** `mano_app/docs/SCREENS.md` (cada pantalla, ruta, lógica de cada botón y pendientes) · `mano_app/docs/MIGRATION_PLAN.md` (fases F0–F8 y gates; F8 = subida a remoto) · `mano_app/docs/ARCHITECTURE_CURRENT_STATE.md` (arquitectura y los 21 hallazgos) · `.kiro/steering/*.md`.
 
@@ -32,13 +32,14 @@ description: Fuente de verdad de Mano App (marketplace local con negocios, comis
 - Es una app profesional: el backend se corrige para funcionar de verdad. **D1 decidida: contrato congelado, código corregible.**
 - **Documentar siempre** (skill, steering, docs, contrato) y **levantar la app local** para que el usuario pruebe a mano y dé feedback; con eso decide qué pedir después.
 - El usuario compartió un token de GitHub por chat y pidió **no insistir en revocarlo**. No repetirlo ni escribirlo en ningún archivo salvo `Repos/.kiro/settings/mcp.json`.
-- **Llaves de Wompi sandbox (25-nov-2026):** el usuario las pasó por chat y pidió que el agente las ponga en los archivos, **no las comparta con nadie y no le hable de revocarlas**. Viven solo en `mano_app/.env.local` (en `.gitignore`; variables `LOCAL_WOMPI_*`). No escribirlas en docs, skill, logs ni respuestas (al verificar, mostrar solo el prefijo y la longitud). Comercio de Wompi: "Mano app", sandbox activo; panel en `comercios.wompi.co` → Desarrollo → Programadores. Guía: `docs/WOMPI_SANDBOX.md`.
+- **Llaves de Wompi sandbox (24-nov-2026):** el usuario las pasó por chat y pidió que el agente las ponga en los archivos, **no las comparta con nadie y no le hable de revocarlas**. Viven solo en `mano_app/.env.local` (en `.gitignore`; variables `LOCAL_WOMPI_*`). No escribirlas en docs, skill, logs ni respuestas (al verificar, mostrar solo el prefijo y la longitud). Comercio de Wompi: "Mano app", sandbox activo; panel en `comercios.wompi.co` → Desarrollo → Programadores. Guía: `docs/WOMPI_SANDBOX.md`.
 - Idioma: español colombiano, trato cercano y directo.
 - Quiere ir a desplegar con MCP de GitHub y luego Azure, "donde ya lo tenía" (VM de Azure con CI/CD en el repo).
 
 ## 1. Reglas inviolables (leer primero)
 
 1. **Imágenes del diseñador = fuente de verdad intocable.** Nunca se editan, optimizan, renombran, mueven, sobrescriben ni regeneran. Solo se programan botones/hotspots encima. Si el código no calza con la imagen, se cambia el código. Si la imagen parece mal, se avisa y se detiene. Detalle: `.kiro/steering/design-assets-immutable.md`. Protegen: hook `.kiro/hooks/protect-design-assets.json`, manifiesto `mano_app/design-assets/MANIFEST.sha256` (18 hashes: `web/public/branding/` y `Mano_images/`) y `mano_app/scripts/verify-design-assets.sh`. Las 9 JPG definitivas están en `web/public/branding/` (copia idéntica por hash de `Mano_images/Mano/`); tienen espacios y mayúsculas en el nombre y **no se renombran** (se referencian con `encodeURIComponent`). `register-design-assets.sh` solo lo corre el agente si el usuario lo pide explícitamente (`--replace`, `--forget`).
+2. **Costos siempre:** todo cambio de infraestructura o de servicios de pago actualiza `mano_app/docs/COSTS.md` y `architecture.html` § 11 en el mismo turno (precios verificados, USD y COP, 🟡 si no se pudo verificar). Ver §17.
 2. **Documentar siempre y probar en local siempre** (`.kiro/steering/workflow-docs-and-local-testing.md` + hook `sync-docs-and-test-local`, que se dispara al terminar cada turno). Cada cambio actualiza esta skill, los steering/hooks, `mano_app/docs/` y el contrato **en el mismo turno**; después se levanta la app local, se verifica y se entrega al usuario la URL y los pasos para probar. Al final de cada respuesta se lista qué documentos se actualizaron.
 3. **Local primero.** Nada va a remoto (Azure, GHCR, DNS, tiendas) hasta que el *Gate local* de la fase pase **y el usuario lo confirme**. No `git push`, no tocar Azure, no credenciales reales de Wompi/SMTP. `.kiro/steering/local-first-and-contract.md`.
 4. **Contrato congelado, código corregible.** Solo cambios aditivos o `/v2`. Las correcciones internas del backend están aprobadas si el contrato no cambia (se prueba con `tests/api` y se regenera `contract/openapi.yaml`). **No se cambian textos de error** que el contrato o los tests fijan.
@@ -126,7 +127,7 @@ NODE_PATH=/tmp/mano/e2e/node_modules LD_LIBRARY_PATH=/tmp/mano/libs/root/usr/lib
 
 ## 7. Hallazgos conocidos del backend (a corregir en F4, sin cambiar contrato)
 
-**Corregidos 25-nov-2026:** firma de integridad Wompi (#1), checksum del webhook con `timestamp` (#2), webhook y `initiate` exigen secretos fuera de `MOCK_MODE` (#3), `JWT_SECRET` obligatorio de 32+ caracteres fuera de mock (#11), seed de demostración solo con `SEED_DEMO_DATA`/`MOCK_MODE` (#6), webhook idempotente y atómico, confirmación de APPROVED contra la API de Wompi, conciliador de pagos pendientes; guía en `docs/WOMPI_SANDBOX.md`, simulador `scripts/wompi-webhook-sim.sh`; falta el E2E con el sandbox real 👤. Pendientes: sin auto-confirm real fuera de mock · ads y Plan Pro se activan sin cobrar · seed con `password123` también en prod · atribución del comisionista perdida en compra guest (`referral_link_id` ignorado; afecta compras desde la vitrina) · anti-fraude solo en el flujo mock · operaciones de dinero sin transacciones · ruta Stripe divergente · `JWT_SECRET` con default · stories por API sin `expires_at` (#19, XFAIL FEED-03) · `/map/nearby` expone negocios no aprobados (#20) · listas vacías como `null` (#21) · `CourierAvailableOrders` abierto a cualquier usuario autenticado · `GET /deliveries/:id` público · KYC a medias. **Resuelto:** #18 registro sin teléfono (24-nov-2026). Lista completa en `ARCHITECTURE_CURRENT_STATE.md` §6.
+**Corregidos 24-nov-2026:** firma de integridad Wompi (#1), checksum del webhook con `timestamp` (#2), webhook y `initiate` exigen secretos fuera de `MOCK_MODE` (#3), `JWT_SECRET` obligatorio de 32+ caracteres fuera de mock (#11), seed de demostración solo con `SEED_DEMO_DATA`/`MOCK_MODE` (#6), webhook idempotente y atómico, confirmación de APPROVED contra la API de Wompi, conciliador de pagos pendientes; guía en `docs/WOMPI_SANDBOX.md`, simulador `scripts/wompi-webhook-sim.sh`; falta el E2E con el sandbox real 👤. Pendientes: sin auto-confirm real fuera de mock · ads y Plan Pro se activan sin cobrar · seed con `password123` también en prod · atribución del comisionista perdida en compra guest (`referral_link_id` ignorado; afecta compras desde la vitrina) · anti-fraude solo en el flujo mock · operaciones de dinero sin transacciones · ruta Stripe divergente · `JWT_SECRET` con default · stories por API sin `expires_at` (#19, XFAIL FEED-03) · `/map/nearby` expone negocios no aprobados (#20) · listas vacías como `null` (#21) · `CourierAvailableOrders` abierto a cualquier usuario autenticado · `GET /deliveries/:id` público · KYC a medias. **Resuelto:** #18 registro sin teléfono (24-nov-2026). Lista completa en `ARCHITECTURE_CURRENT_STATE.md` §6.
 
 ## 8. Estado de decisiones
 
@@ -162,7 +163,7 @@ Decididas además: imágenes tal cual con datos de ejemplo · se programa todo b
 | uv | 0.13.6 | `~/.local/bin` |
 | jq | 1.8.2 | `~/.local/bin` |
 | Docker + Compose | 29.9.2 / v5.6.1 | sistema |
-| cloudflared | 2026.11.2 | `~/.local/bin` (instalado 25-nov-2026 sin sudo; túnel temporal para el webhook de Wompi: `bash scripts/wompi-sandbox.sh up` lo abre/reutiliza (puerto 3000 = web + /api); la URL `trycloudflare.com` cambia en cada arranque y hay que repegarla en Wompi → URL de Eventos) |
+| cloudflared | 2026.11.2 | `~/.local/bin` (instalado 24-nov-2026 sin sudo; túnel temporal para el webhook de Wompi: `bash scripts/wompi-sandbox.sh up` lo abre/reutiliza (puerto 3000 = web + /api); la URL `trycloudflare.com` cambia en cada arranque y hay que repegarla en Wompi → URL de Eventos) |
 
 - En comandos no interactivos anteponer el `PATH` de §6. **El DNS de WSL falla a ratos** (`server misbehaving`): reintentar descargas e imágenes.
 - El agente **no tiene `sudo`**. Los scripts que lo requieren los corre el usuario (`install-docker-wsl.sh`, `grant-docker-access.sh`).
@@ -190,7 +191,7 @@ Decididas además: imágenes tal cual con datos de ejemplo · se programa todo b
 
 **Qué hay ya hecho (no repetir):** comercio "Mano app" creado en `comercios.wompi.co` (Persona Natural; sin activar el comercio, no hace falta para sandbox); modo de pruebas activo (panel **Desarrollo → Programadores**, debe decir "Estás en Sandbox"); las 4 llaves de pruebas en `mano_app/.env.local` (`LOCAL_WOMPI_PUBLIC_KEY`, `_PRIVATE_KEY`, `_INTEGRITY_SECRET`, `_EVENTS_SECRET`, prefijos `pub_test_`, `prv_test_`, `test_integrity_`, `test_events_`); `cloudflared` instalado en `~/.local/bin`. El backend ya está corregido (firma de integridad SHA256, checksum del webhook con `timestamp`, idempotencia, validación de monto, secretos obligatorios fuera de `MOCK_MODE`).
 
-**Por qué un túnel https (hallazgo 25-nov-2026):** `checkout.wompi.co` devuelve **403 de CloudFront** si `redirect-url` es `http://localhost…`; con https público devuelve 200. Además Wompi no puede llamar a `localhost` para el webhook. Por eso la app se prueba por una URL `https://….trycloudflare.com` que apunta al puerto 3000, y `LOCAL_APP_BASE_URL` se pone con esa URL.
+**Por qué un túnel https (hallazgo 24-nov-2026):** `checkout.wompi.co` devuelve **403 de CloudFront** si `redirect-url` es `http://localhost…`; con https público devuelve 200. Además Wompi no puede llamar a `localhost` para el webhook. Por eso la app se prueba por una URL `https://….trycloudflare.com` que apunta al puerto 3000, y `LOCAL_APP_BASE_URL` se pone con esa URL.
 
 ### Cada sesión de pruebas (pasos)
 1. `cd /mnt/c/Users/mdigital/Downloads/Repos/mano_app && export PATH=$HOME/.local/go/bin:$HOME/.local/node/bin:$HOME/.local/bin:$PATH`
@@ -203,7 +204,7 @@ Decididas además: imágenes tal cual con datos de ejemplo · se programa todo b
 8. El agente revisa: `bash scripts/wompi-sandbox.sh status N`. Muestra webhooks recibidos, estado en BD y lo que Wompi tiene de cada referencia (consulta con la llave privada, sin imprimirla).
 9. Al terminar: `bash scripts/wompi-sandbox.sh down` (cierra el túnel y restaura `LOCAL_APP_BASE_URL=http://localhost:3000`). **Hacerlo antes de `tests/api`**.
 
-### Lo que el backend hace ahora con los pagos (25-nov-2026)
+### Lo que el backend hace ahora con los pagos (24-nov-2026)
 - **Webhook** (`POST /api/webhooks/wompi`): valida el checksum (propiedades + `timestamp` + secreto de eventos), ignora repetidos (`wompi_events.checksum` único), y para un APPROVED **consulta a Wompi** (`GET /transactions/{id}` con la llave privada) antes de marcar la orden pagada. Si Wompi no responde → 503 y Wompi reintenta (30 min, 3 h, 24 h).
 - **Sincronización** (`POST /payments/wompi/sync {order_id}`): la llama `/orders` al volver del checkout (`?id=` en la URL) y el botón "Verificar pagos pendientes" de `/pagos`. Solo el comprador de la orden; 429 si se repite en < 5 s; 503 sin llave privada.
 - **Conciliador:** cada 2 min (`WOMPI_RECONCILE_SECONDS`, `WOMPI_RECONCILE=false` lo apaga) revisa los PENDING `MANO-%` de las últimas 48 h contra Wompi. Probado de verdad: marcó solo las órdenes 46 y 47 como fallidas con el motivo de Wompi, y `sync` dejó la 49 `paid/held`.
@@ -215,7 +216,7 @@ Decididas además: imágenes tal cual con datos de ejemplo · se programa todo b
 - Wompi `APPROVED` + orden `paid/held` = todo bien. Wompi `APPROVED` o `ERROR/DECLINED` con la orden en `pending_payment` = **el webhook no llegó** (URL de eventos sin guardar, túnel distinto o muerto). Wompi "no tiene transacción" = el comprador no llegó a pagar.
 - Log `wompi: webhook con firma inválida` en un evento real = `LOCAL_WOMPI_EVENTS_SECRET` no coincide con el del panel (copiar de nuevo el de Eventos del **sandbox**).
 
-### Resultados reales hasta hoy (25-nov-2026)
+### Resultados reales hasta hoy (24-nov-2026)
 - Orden 46 (tarjeta no de prueba) → Wompi ERROR "La tarjeta usada no es admitida para el ambiente Sandbox". Orden 47 ($120.000, Nequi `…4517`) → ERROR "Número no válido en Sandbox". Ambos por datos no válidos; el flujo hasta Wompi funciona (firma, llave, URL, pantalla de pago).
 - **Orden 49 ($10.000, Nequi de prueba) → Wompi APPROVED** (comprobado con `status`), pero nginx y el backend **no registraron ninguna llamada de Wompi** a `/api/webhooks/wompi` (solo una prueba manual y un GET desde Chrome, que da 404 porque la ruta es solo POST). El `GET /v1/merchants/<llave pública>` no expone la URL de eventos, así que no se puede verificar por API: hay que mirar el panel. Causa probable: la URL de eventos no está guardada en el ambiente **sandbox**.
 - En los intentos anteriores (órdenes 46 y 47) el backend **no recibió el webhook** tampoco (solo el de una prueba manual): la URL de eventos probablemente no estaba guardada. **Pendiente:** guardarla y repetir con `4242…` o `3991111111` hasta ver `APPROVED` + orden `paid/held` + escrow `held`; después probar DECLINED, ERROR y repetición del evento.
@@ -229,7 +230,7 @@ Decididas además: imágenes tal cual con datos de ejemplo · se programa todo b
 - UX del checkout pendiente de tu decisión: "Añadir" sin aviso, sin enlace al carrito, "Redirigiendo a Wompi…" sin redirección.
 - Producción: `pub_prod_…` y el link de pagos del panel cobran dinero real; no usarlos para probar. Persona Natural + escrow/reparto a terceros: consultar a Wompi y a un contador/abogado antes de producción.
 
-## 15. GitHub y Azure: estado y cómo desplegar (25-nov-2026)
+## 15. GitHub y Azure: estado y cómo desplegar (24-nov-2026)
 
 **Decisión del usuario:** subir todo a GitHub y dejar el despliegue listo, "que yo solo le dé start a la VM". Paso a paso completo y tabla de problemas: `mano_app/docs/DEPLOY.md`.
 
@@ -240,8 +241,19 @@ Decididas además: imágenes tal cual con datos de ejemplo · se programa todo b
 - **Azure vía MCP:** responde, pero con la suscripción Disabled los comandos de recursos fallan (`Network is unreachable`). Solo lectura salvo pedido expreso. Grupo `rg-mano-app` (eastus): VM `mano-app-vm`, IP `mano-app-vm-ip`, NSG, disco. **No se ha tocado nada en Azure.**
 - **Aún NO listo para dinero real:** faltan F4.4 (auto-confirm 24 h), F4.5, F4.6, F4.7 (retiros/liberación atómicos) y revisión legal/contable del escrow con terceros. Primer despliegue = Wompi **sandbox**.
 
-## 16. Estado real del refactor de `docs/architecture.html` (25-nov-2026)
+## 16. Estado real del refactor de `docs/architecture.html` (24-nov-2026)
 Detalle y tabla por fase en `mano_app/docs/MIGRATION_PLAN.md` § "Avance real". Resumen: de 76 tareas, **12 ✅ y 7 🟡 (≈ 16 % / 25 %)**; ningún gate (G0–G8) pasó. **Hecho:** F0 casi completa, contrato en borrador (27 rutas, 31 operaciones de ~64 reales), hotspots/cliente/sesión del web, F4 ≈ 45 % (pagos). **No existe:** gateway (F2), servicios laterales (F5), apps iOS/Android (F6), migraciones versionadas (F7), staging real (F8). La arquitectura objetivo sigue siendo el monolito Go detrás de nginx. Decisiones abiertas: D2 (auto-confirm), D3 (móvil nativo vs RN), D4 (gateway), D5, D7, D8, D9. Siguiente en la ruta: PR + CI verde (G0) → F4.4 → decidir D4 y levantar F2.
+
+## 17. Costos (corte 24-nov-2026) — fuente: `mano_app/docs/COSTS.md` y `architecture.html` § 11
+**Regla:** "costos siempre" (decisión del usuario): cada cambio de infraestructura, gateway, base de datos, hosting, apps o pasarela se refleja en esos dos documentos con precio por mes (USD y COP), supuestos y fuente.
+
+- **Hoy (Azure, eastus):** monolito en 1 VM ≈ **$39,30/mes** (B2s $30,37 + disco P4 $5,28 + IP $3,65) ≈ 138 mil COP; apagada (desasignada) ≈ $9. 🟡 El tamaño real de la VM **no se pudo leer** (suscripción Disabled, "Network is unreachable"); se asumió B2s, que es lo documentado. Los docs viejos (`INFRASTRUCTURE.md`) calculaban con Brazil South; los recursos están en eastus.
+- **Refactor:** A (Kong + servicios en la VM, B2ms) **$76–90**; B (APIM Consumption + Container Apps + PostgreSQL Flexible + Redis Basic) **$82–150** (escala ≈ $433); C (APIM Basic v2 $150 + BD con réplica + Front Door) **≈ $580**. APIM: Consumption $3,50/millón tras 1 M gratis · Developer $48 (sin SLA) · Basic v2 $150 · Standard v2 $700 · Premium $2.795. ⚠️ Container Apps: la API muestra un "Environment Management Hour" de $0,10/h (≈ $73/mes) desde 01-sep-2026; **sin confirmar** si aplica al plan de consumo.
+- 🔴 **Margen:** Wompi cobra **2,65 % + $700 + IVA** por transacción exitosa; la comisión de plataforma es 4 %. Con pedidos menores de **≈ $98.400 COP** la plataforma **pierde** dinero (ej. $60.000 → −$325; $10.000 → −$748). El código no descuenta la tarifa de nadie. Es una decisión de producto pendiente (cargo al comprador, mínimo por pedido, repartir, negociar).
+- 🟡 **Ancho de banda:** lo domina el peso de las imágenes (0,4–1,8 MB). Con 50.000 usuarios ≈ 1 TB/mes ≈ $78. Pedir al diseñador una exportación liviana (no se editan las imágenes) + CDN gratuito.
+- **Apps:** Apple $99/año, Google $25 una vez 🟡; push FCM/APNs $0.
+- **TRM supuesta $3.500** (rango de la última semana ≈ $3.310–3.510). Cómo consultar precios: herramienta de precios de Azure (`pricing_get` con filtro OData `serviceName`, `armRegionName`, `priceType eq 'Consumption'`); las consultas con nombres de servicio equivocados devuelven vacío.
+- **Aún sin cotizar:** Wompi "Pagos a terceros" (para pagar retiros), impuestos (IVA de la comisión, ICA, 4×1000), tarifas por PSE/Nequi si difieren.
 
 ## 13. Pendientes para pulir esta skill
 - Mobile: documentar hotspots cuando el diseñador entregue imágenes de iOS/Android; IDs de bundle/package para deep links (F3.10/F6).

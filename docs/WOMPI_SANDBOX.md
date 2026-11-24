@@ -1,6 +1,6 @@
 # Probar pagos con Wompi sandbox (local) — procedimiento repetible
 
-Última actualización: 25-nov-2026. Pagos de punta a punta en sandbox: Wompi aprobó un pago de prueba (orden 49) y la app lo reflejó (`paid`/`held`) mediante la sincronización con Wompi (§6b). Todavía **no se ha visto llegar el webhook directo de Wompi** (falta confirmar la URL de eventos en el panel).
+Última actualización: 24-nov-2026. Pagos de punta a punta en sandbox: Wompi aprobó un pago de prueba (orden 49) y la app lo reflejó (`paid`/`held`) mediante la sincronización con Wompi (§6b). Todavía **no se ha visto llegar el webhook directo de Wompi** (falta confirmar la URL de eventos en el panel).
 
 > Resumen de una sesión de pruebas: `bash scripts/wompi-sandbox.sh up` → pegar la URL de eventos en Wompi (si cambió) → abrir la app por la URL del túnel → pagar con datos de prueba → `bash scripts/wompi-sandbox.sh status <orden>`.
 
@@ -22,7 +22,7 @@ LOCAL_WOMPI_EVENTS_SECRET=test_events_...
 - App local arriba: `bash scripts/local-up.sh`.
 - `cloudflared` en `~/.local/bin` (túnel gratuito, sin cuenta ni sudo). Instalar: descargar `cloudflared-linux-amd64` de https://github.com/cloudflare/cloudflared/releases/latest a `~/.local/bin/cloudflared` y `chmod +x`.
 
-## 3. Por qué hace falta una URL https pública (hallazgo 25-nov-2026)
+## 3. Por qué hace falta una URL https pública (hallazgo 24-nov-2026)
 `checkout.wompi.co` está detrás de CloudFront/WAF y responde **403 "The request could not be satisfied"** si el parámetro `redirect-url` es `http://localhost:…`. Con una URL `https` pública responde 200. Además Wompi **no puede llamar a `localhost`** para el webhook. Solución: un túnel `https` hacia el puerto 3000 (nginx local, que sirve el web y `/api`) y `APP_BASE_URL` apuntando a él.
 
 ## 4. Cada sesión de pruebas
@@ -58,7 +58,7 @@ Cerrar al terminar: `bash scripts/wompi-sandbox.sh down` (cierra el túnel y res
 Los datos del pagador (nombre, correo, teléfono) pueden ser reales o inventados: no afectan el resultado. Wompi envía un comprobante al correo indicado.
 Lista completa (Daviplata, Bancolombia, Puntos Colombia, Su+ Pay, estados, endpoints, cuentas del seed y matriz de casos por ejecutar): `.kiro/skills/mano-app/references/wompi-sandbox-datos-de-prueba.md`.
 
-## 6. Qué pasó en las primeras pruebas reales (25-nov-2026)
+## 6. Qué pasó en las primeras pruebas reales (24-nov-2026)
 | Orden | Intento | Resultado en Wompi | Causa |
 |---|---|---|---|
 | 46 | Tarjeta | ERROR · "La tarjeta usada no es admitida para el ambiente Sandbox" | No era una tarjeta de prueba |
@@ -67,7 +67,7 @@ Lista completa (Daviplata, Bancolombia, Puntos Colombia, Su+ Pay, estados, endpo
 
 Conclusión: la integración funciona hasta Wompi (firma, llave pública, URL, pantalla de pago) y Wompi ya aprobó un pago de prueba. En los tres casos el backend **no recibió el webhook** (en nginx no hay ninguna llamada de Wompi a `/api/webhooks/wompi`; un `GET` desde el navegador da 404 porque la ruta es solo POST, y eso es normal) . La API de Wompi no expone la URL de eventos, así que solo se puede revisar en el panel: probablemente no está guardada en el ambiente **sandbox**, o apunta a un túnel anterior. Para repetir el evento sin pagar de nuevo: "Reenviar evento" en Transacciones del panel (si existe).
 
-## 6b. Qué hace la app ahora si el webhook no llega (25-nov-2026)
+## 6b. Qué hace la app ahora si el webhook no llega (24-nov-2026)
 El pago ya no depende de un solo aviso:
 - Al volver del checkout (`/orders?id=…`) la app llama a `POST /payments/wompi/sync`: el **servidor** pregunta a Wompi y aplica el resultado.
 - En `/pagos` el botón **Verificar pagos pendientes** hace lo mismo.

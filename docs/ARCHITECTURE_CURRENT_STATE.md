@@ -178,12 +178,12 @@ Ordenados por severidad. **Ninguno se puede corregir desde un gateway** salvo do
 
 ### Críticos (pagos / dinero)
 
-1. [CORREGIDO 25-nov-2026] **Firma de integridad de Wompi incorrecta.** `generateWompiCheckout` calcula `HMAC-SHA256(secret, ref+monto+COP+secret)`. La documentación oficial de Wompi pide un **SHA256 simple** de `<Referencia><Monto><Moneda><SecretoIntegridad>`. Con HMAC el checkout probablemente rechaza la firma. *(Contrastado con docs.wompi.co.)*
-2. **[CORREGIDO 25-nov-2026]** **Verificación del webhook de Wompi incompleta.** `verifyWompiSignature` concatena las propiedades + secreto pero **omite el `timestamp`** del evento, que Wompi exige en el checksum. Con `WOMPI_EVENTS_SECRET` configurado, los eventos legítimos fallan con 401 ⇒ **ninguna orden pasaría a `paid` en producción**. *(Contrastado con docs.wompi.co.)*
-3. **[CORREGIDO 25-nov-2026]** **Webhook sin firma cuando el secreto está vacío.** *(Ahora, fuera de `MOCK_MODE`, el webhook responde 503 sin `WOMPI_EVENTS_SECRET`; con llave privada además confirma cada APPROVED contra la API de Wompi.)* Si `WOMPI_EVENTS_SECRET` no está definido, `WompiWebhook` acepta cualquier POST ⇒ cualquiera puede marcar una orden como pagada y disparar splits. En `docker-compose.prod.yml` un `.env` incompleto produce justo ese caso.
+1. [CORREGIDO 24-nov-2026] **Firma de integridad de Wompi incorrecta.** `generateWompiCheckout` calcula `HMAC-SHA256(secret, ref+monto+COP+secret)`. La documentación oficial de Wompi pide un **SHA256 simple** de `<Referencia><Monto><Moneda><SecretoIntegridad>`. Con HMAC el checkout probablemente rechaza la firma. *(Contrastado con docs.wompi.co.)*
+2. **[CORREGIDO 24-nov-2026]** **Verificación del webhook de Wompi incompleta.** `verifyWompiSignature` concatena las propiedades + secreto pero **omite el `timestamp`** del evento, que Wompi exige en el checksum. Con `WOMPI_EVENTS_SECRET` configurado, los eventos legítimos fallan con 401 ⇒ **ninguna orden pasaría a `paid` en producción**. *(Contrastado con docs.wompi.co.)*
+3. **[CORREGIDO 24-nov-2026]** **Webhook sin firma cuando el secreto está vacío.** *(Ahora, fuera de `MOCK_MODE`, el webhook responde 503 sin `WOMPI_EVENTS_SECRET`; con llave privada además confirma cada APPROVED contra la API de Wompi.)* Si `WOMPI_EVENTS_SECRET` no está definido, `WompiWebhook` acepta cualquier POST ⇒ cualquiera puede marcar una orden como pagada y disparar splits. En `docker-compose.prod.yml` un `.env` incompleto produce justo ese caso.
 4. **El auto-confirm de 24 h no existe fuera de mock.** Solo `POST /mock/escrow/auto-confirm` libera órdenes vencidas; no hay cron/worker. En producción el escrow solo se libera si el comprador confirma o el admin resuelve una disputa. Los comisionistas/negocios podrían quedar sin cobrar indefinidamente.
 5. **Publicidad y Plan Pro gratis.** `PurchasePackage` crea la transacción en `pending` y **activa el anuncio de inmediato**; `UpgradePro` activa Pro sin cobrar. Además `Advertisement.ExpiresAt` nunca se llena ⇒ los anuncios no expiran.
-6. **[CORREGIDO 25-nov-2026]** **Datos de prueba en producción.** *(Ahora `SEED_DEMO_DATA` decide; sin definir solo se siembra con `MOCK_MODE=true`; `docker-compose.prod.yml` la fija en `false`. El primer administrador sale de `ADMIN_EMAIL`/`ADMIN_PASSWORD`.)* `database.New` ejecuta `seedTestData` siempre que `users` esté vacía, sin importar `MOCK_MODE`: crea `juan/carlos/maria@example.com` con contraseña `password123` en una BD de producción nueva.
+6. **[CORREGIDO 24-nov-2026]** **Datos de prueba en producción.** *(Ahora `SEED_DEMO_DATA` decide; sin definir solo se siembra con `MOCK_MODE=true`; `docker-compose.prod.yml` la fija en `false`. El primer administrador sale de `ADMIN_EMAIL`/`ADMIN_PASSWORD`.)* `database.New` ejecuta `seedTestData` siempre que `users` esté vacía, sin importar `MOCK_MODE`: crea `juan/carlos/maria@example.com` con contraseña `password123` en una BD de producción nueva.
 
 ### Altos
 
@@ -417,7 +417,7 @@ mano/
 - **D9. Headers de cliente**: ¿te sirven los nombres `X-Mano-Client`, `X-Mano-Client-Version`, `X-Mano-Device-Id`? ¿Con qué política de versión mínima (cuántas versiones atrás se soportan antes de responder `426`)?
 
 
-## Anexo — Cambios de arquitectura del 25-nov-2026 (pagos y despliegue)
+## Anexo — Cambios de arquitectura del 24-nov-2026 (pagos y despliegue)
 
 Aditivos al contrato (3 rutas nuevas: `GET /payments`, `GET /payments/{reference}`, `POST /payments/wompi/sync`; ninguna ruta ni campo existente cambió).
 

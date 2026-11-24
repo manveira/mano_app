@@ -1,6 +1,6 @@
 # DEPLOY.md — Despliegue en Azure (procedimiento)
 
-Última actualización: 25-nov-2026. Reemplaza la guía anterior (que desplegaba con cada `push` a `main`; eso ya no existe).
+Última actualización: 24-nov-2026. Reemplaza la guía anterior (que desplegaba con cada `push` a `main`; eso ya no existe).
 
 **Resumen:** el código vive en GitHub; el despliegue se lanza **a mano** desde GitHub Actions; construye las imágenes, las sube a GHCR, entra por SSH a la VM de Azure, hace un respaldo de la base de datos, levanta la versión nueva y comprueba que esté sana (si no, vuelve a la anterior). Un `push` o un merge **nunca** despliegan solos.
 
@@ -13,7 +13,7 @@ GitHub (Actions → Deploy Mano App → Run workflow, escribir DEPLOY)
 
 ## 1. Cuando Azure active la suscripción (checklist, en este orden)
 
-Estado conocido al 25-nov-2026: la suscripción `manve-subs` figura **Disabled** (el pago aún no estaba procesado) y no se pudo leer el estado de la VM `mano-app-vm`.
+Estado conocido al 24-nov-2026: la suscripción `manve-subs` figura **Disabled** (el pago aún no estaba procesado) y no se pudo leer el estado de la VM `mano-app-vm`.
 
 1. **Azure Portal → Suscripciones**: confirma que `manve-subs` esté **Activa**.
 2. **Portal → Máquinas virtuales → `mano-app-vm` → Iniciar** (Start).

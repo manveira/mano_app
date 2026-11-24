@@ -30,7 +30,7 @@ Inicio por rol (`homeForRole` en `web/lib/session.ts`): `freelancer → /comisio
 | `PERFIL.jpg` | `/profile` | ✅ Volver (al inicio de su rol). ✅ Ajustes → `/ajustes`. ✅ Ayuda → `/ayuda`. 🟡 Avatar → aviso (falta el servicio de subida de imágenes, F5.2). Sirve a todos los roles. |
 | (sin imagen) | `/ajustes` | ✅ Edita nombre, celular, Nequi y cédula (`PATCH /me`). |
 | (sin imagen) | `/ayuda` | ✅ Preguntas frecuentes. Contacto por WhatsApp/correo si se definen `NEXT_PUBLIC_SUPPORT_WHATSAPP` / `NEXT_PUBLIC_SUPPORT_EMAIL` (variables de build). |
-| (sin imagen) | `/pagos` | ✅ **Mis pagos** (25-nov-2026). Lista los pagos con Wompi mapeados a tus pedidos (`GET /payments`): monto, estado (Aprobado / Pendiente / Rechazado / Con error / Anulado), método y fecha. ✅ Tocar un pago muestra referencia, id de Wompi, motivo, si el dinero está retenido (escrow) y la línea de tiempo (`GET /payments/{ref}`). ✅ **Verificar pagos pendientes**: pregunta a Wompi, vía el servidor, por los pagos pendientes (`POST /payments/wompi/sync`; máx. 1 consulta por orden cada 5 s). ✅ **Reintentar pago** (si fue rechazado/error y el pedido no está pagado) → `/checkout?order_id=N`. ✅ **Ver pedido** → `/orders`. ✅ Dueños de negocio: pestaña "Recibidos en mis negocios" (`?scope=received`, sin datos del pagador). Accesible desde el enlace "Pagos" del menú superior y desde `/orders`. |
+| (sin imagen) | `/pagos` | ✅ **Mis pagos** (24-nov-2026). Lista los pagos con Wompi mapeados a tus pedidos (`GET /payments`): monto, estado (Aprobado / Pendiente / Rechazado / Con error / Anulado), método y fecha. ✅ Tocar un pago muestra referencia, id de Wompi, motivo, si el dinero está retenido (escrow) y la línea de tiempo (`GET /payments/{ref}`). ✅ **Verificar pagos pendientes**: pregunta a Wompi, vía el servidor, por los pagos pendientes (`POST /payments/wompi/sync`; máx. 1 consulta por orden cada 5 s). ✅ **Reintentar pago** (si fue rechazado/error y el pedido no está pagado) → `/checkout?order_id=N`. ✅ **Ver pedido** → `/orders`. ✅ Dueños de negocio: pestaña "Recibidos en mis negocios" (`?scope=received`, sin datos del pagador). Accesible desde el enlace "Pagos" del menú superior y desde `/orders`. |
 
 ## Comprador (público)
 
@@ -39,7 +39,7 @@ Inicio por rol (`homeForRole` en `web/lib/session.ts`): `freelancer → /comisio
 | `COMPRADOR.jpg` | `/vendedor/[username]` | ✅ Pública (sin sesión). Búsqueda y chips sobre los productos reales (`GET /vendedor/:username`). ✅ Agregar al carrito de cada tarjeta guarda el producto real en `mano_cart` (avisa si mezcla negocios). ✅ Carrito → `/cart`. ✅ Compartir la vitrina. ✅ Logo → `/`. ⬜ La atribución de la comisión al comprar desde la vitrina depende de F4.5 (el backend ignora `referral_link_id`). |
 
 ## Pantallas de compra (interfaz propia, sin imagen del diseñador)
-| Ruta | Cambios del 25-nov-2026 |
+| Ruta | Cambios del 24-nov-2026 |
 |---|---|
 | `/checkout` | ✅ Tras pulsar **Pagar**, el navegador va **directo al checkout de Wompi** (antes había que pulsar un segundo botón). El enlace "Ir a pagar en Wompi →" queda como respaldo. Solo acepta redirigir a `https://checkout.wompi.co/`. |
 | `/orders` | ✅ Al volver de Wompi (la URL trae `?id=`), confirma los pagos pendientes con el servidor (`POST /payments/wompi/sync`) y muestra "Estamos confirmando tu pago…". ✅ Enlace "Ver mis pagos →". |

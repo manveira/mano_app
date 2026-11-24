@@ -206,7 +206,7 @@ expect_jq '.currency' COP
 expect_jq_not_empty '.signature'
 expect_jq '.checkout_url | startswith("https://checkout.wompi.co/p/?")' true
 note "amount esperado = ${WTOTAL}x100 (el .md asume 450000 con Espresso 4500); el redirect_url del request se ignora (usa APP_BASE_URL/orders)"
-note "hallazgo #1 CORREGIDO (25-nov-2026): la firma es SHA256 simple (ref+monto+COP+secreto); se verifica con el vector oficial en go test ./internal/handlers -run Wompi"
+note "hallazgo #1 CORREGIDO (24-nov-2026): la firma es SHA256 simple (ref+monto+COP+secreto); se verifica con el vector oficial en go test ./internal/handlers -run Wompi"
 end
 
 begin PAY-13 "No se puede iniciar pago de orden ajena"

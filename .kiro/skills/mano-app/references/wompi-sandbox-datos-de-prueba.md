@@ -1,6 +1,6 @@
 # Wompi sandbox: datos y números de prueba (referencia rápida)
 
-Fuente: https://docs.wompi.co/en/docs/colombia/datos-de-prueba-en-sandbox/ (leída el 25-nov-2026). Son datos públicos de prueba, **no son secretos**. Las llaves del comercio **sí** son secretas y viven solo en `mano_app/.env.local` (nunca aquí).
+Fuente: https://docs.wompi.co/en/docs/colombia/datos-de-prueba-en-sandbox/ (leída el 24-nov-2026). Son datos públicos de prueba, **no son secretos**. Las llaves del comercio **sí** son secretas y viven solo en `mano_app/.env.local` (nunca aquí).
 
 Regla general: en el sandbox **solo** valen los datos de esta lista. Cualquier otro dato termina en `ERROR` (ejemplos reales de hoy: tarjeta no de prueba → "La tarjeta usada no es admitida para el ambiente Sandbox"; Nequi `…4517` → "Número no válido en Sandbox"). Para que la prueba funcione hay que usar la **llave pública `pub_test_…`** (lo garantiza el modo de pruebas).
 
@@ -86,7 +86,7 @@ Pago desde un link de comisionista o vitrina (`/r/<slug>`, `/vendedor/<username>
 | 1 | Pago aprobado con tarjeta | `4242 4242 4242 4242` | orden `paid`/`held`; 2 splits (plataforma + negocio) o 3 si hay comisionista | ⬜ pendiente |
 | 2 | Pago rechazado con tarjeta | `4111 1111 1111 1111` | Wompi DECLINED, orden `payment_failed` | ⬜ pendiente |
 | 3 | Pago con error | cualquier otra tarjeta | Wompi ERROR, orden `payment_failed` | ✅ orden 46 marcada `payment_failed` por el **conciliador** |
-| 4 | Nequi aprobado | `3991111111` | orden `paid`/`held` | ✅ Wompi **APPROVED** (orden 49, $10.000, 25-nov-2026) y **conciliado por `sync`** → orden `paid`/`held` (el webhook directo de Wompi aún no se ha visto llegar) |
+| 4 | Nequi aprobado | `3991111111` | orden `paid`/`held` | ✅ Wompi **APPROVED** (orden 49, $10.000, 24-nov-2026) y **conciliado por `sync`** → orden `paid`/`held` (el webhook directo de Wompi aún no se ha visto llegar) |
 | 5 | Nequi rechazado | `3992222222` | orden `payment_failed` | ⬜ pendiente |
 | 6 | Nequi con error | `…4517` (orden 47) | Wompi ERROR | ✅ orden 47 marcada `payment_failed` por el **conciliador** |
 | 7 | PSE aprobado / rechazado | "Banco que aprueba / rechaza" | `paid`/`held` / `payment_failed` | ⬜ pendiente |

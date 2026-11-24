@@ -11,7 +11,9 @@ Cada vez que se cambie algo, antes de dar la tarea por cerrada se actualiza lo q
 - `.kiro/skills/mano-app/SKILL.md` (mapa del repo, decisiones, hallazgos, pantallas y hotspots, estado del entorno).
 - `.kiro/steering/*.md` y `.kiro/hooks/*` si cambió una regla o un guardarraíl.
 - `mano_app/docs/` (`MIGRATION_PLAN.md` para el estado de tareas, `ARCHITECTURE_CURRENT_STATE.md` si cambió la arquitectura o la lista de hallazgos, `docs/SCREENS.md` para las pantallas y sus botones).
+- `mano_app/docs/COSTS.md` y `docs/architecture.html` § 11 (costos), ver la regla de costos más abajo.
 - `mano_app/contract/` si se añadió un campo o ruta (solo aditivo) y se regenera `openapi.yaml` con `contract/build.py`.
+- **Costos (decisión del usuario, 24-nov-2026: "costos siempre").** Si el cambio crea, quita o redimensiona infraestructura o un servicio de pago (VM, base de datos, APIM/gateway, Container Apps, Redis, almacenamiento, CDN, DNS, tiendas de apps, pasarela de pagos), se actualizan `mano_app/docs/COSTS.md` y la sección "11 · Costos" de `mano_app/docs/architecture.html` **en el mismo turno**: precio por mes (USD y COP), supuestos y fuente. Los precios se consultan con la herramienta de precios de Azure o la página oficial del proveedor; no se inventan, y lo no verificado se marca 🟡. También se avisa si un cambio altera el margen por pedido (tarifa de Wompi vs comisión del 4 %).
 - Si hay una contradicción entre la skill y el código, se avisa y se corrige la skill tras confirmar cuál es lo correcto.
 Al final de cada respuesta se lista qué documentos se actualizaron.
 
