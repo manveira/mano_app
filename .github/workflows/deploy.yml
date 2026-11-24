@@ -136,7 +136,6 @@ jobs:
           password: ${{ secrets.AZURE_VM_PASSWORD }}
           fingerprint: ${{ secrets.AZURE_VM_FINGERPRINT }}
           envs: GHCR_TOKEN,GHCR_USER,DEPLOY_SHA,VM_HOST
-          script_stop: true
           script: |
             bash -s <<'REMOTE'
             set -euo pipefail
@@ -170,11 +169,13 @@ jobs:
 
             echo "▶ 3/6 Respaldo de la base de datos"
             PGUSER_ENV=$(envget POSTGRES_USER); PGDB_ENV=$(envget POSTGRES_DB); PGDB_ENV=${PGDB_ENV:-mano}
-            mkdir -p /opt/mano-backups
+            # azureuser no puede escribir en /opt: los respaldos van a su carpeta personal
+            BACKUP_DIR="${HOME}/mano-backups"
+            mkdir -p "${BACKUP_DIR}"
             if $COMPOSE ps --status running --services 2>/dev/null | grep -qx postgres; then
-              $COMPOSE exec -T postgres pg_dump -U "${PGUSER_ENV}" "${PGDB_ENV}" | gzip > "/opt/mano-backups/mano-$(date +%Y%m%d-%H%M%S)-${DEPLOY_SHA:0:7}.sql.gz"
-              ls -1t /opt/mano-backups/*.sql.gz 2>/dev/null | tail -n +15 | xargs -r rm -f
-              echo "   respaldo guardado en /opt/mano-backups"
+              $COMPOSE exec -T postgres pg_dump -U "${PGUSER_ENV}" "${PGDB_ENV}" | gzip > "${BACKUP_DIR}/mano-$(date +%Y%m%d-%H%M%S)-${DEPLOY_SHA:0:7}.sql.gz"
+              ls -1t "${BACKUP_DIR}"/*.sql.gz 2>/dev/null | tail -n +15 | xargs -r rm -f
+              echo "   respaldo guardado en ${BACKUP_DIR}"
             else
               echo "   (postgres aún no corre: primer despliegue, no hay nada que respaldar)"
             fi

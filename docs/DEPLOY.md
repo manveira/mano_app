@@ -90,7 +90,7 @@ En los logs del backend debe verse `wompi: conciliador activo` (con llaves de Wo
 ## 6. Reversión y respaldos
 - El workflow guarda el SHA del último despliegue sano en `/opt/mano-app/.last_good_tag`. Si el backend no queda sano tras desplegar, **vuelve solo** a esa versión.
 - Reversión manual a una versión anterior: relanza el workflow desde ese commit, o en la VM: `cd /opt/mano-app && IMAGE_TAG=<sha> docker compose -f docker-compose.prod.yml up -d backend frontend`.
-- Respaldos de la base de datos: antes de cada despliegue en `/opt/mano-backups/*.sql.gz` (se conservan los 14 últimos). Restaurar: `gunzip -c ARCHIVO.sql.gz | docker compose -f docker-compose.prod.yml exec -T postgres psql -U USUARIO -d mano`.
+- Respaldos de la base de datos: antes de cada despliegue en `~/mano-backups/*.sql.gz` (se conservan los 14 últimos). Restaurar: `gunzip -c ARCHIVO.sql.gz | docker compose -f docker-compose.prod.yml exec -T postgres psql -U USUARIO -d mano`.
 
 ## 7. Antes de cobrar dinero real
 No cambies a llaves `pub_prod_…` hasta cerrar (ver `docs/MIGRATION_PLAN.md` F4): liberar el escrow automáticamente a las 24 h (F4.4, hoy no existe fuera del modo mock), atribución del comisionista en compras sin cuenta (F4.5), anti-fraude en el flujo real (F4.6) y atomicidad de retiros y liberaciones (F4.7). Consultar a Wompi y a un contador/abogado el modelo de cobrar en nombre de terceros (escrow y reparto).
